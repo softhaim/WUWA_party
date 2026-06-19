@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="명조 보유 캐릭터와 육성도를 바탕으로 파티를 설계하는 로스터 플래너">
+  <title>Resonance Lab — 명조 파티 플래너</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="brand-mark">R</span><span>RESONANCE <b>LAB</b></span></a>
+    <nav><button class="nav-link active" data-view="roster">캐릭터</button><button class="nav-link" data-view="planner">파티 플래너</button></nav>
+    <div class="save-state" id="saveState"><i></i><span>저장 상태 확인 중…</span></div>
+  </header>
+
+  <main>
+    <section id="rosterView">
+      <div class="hero">
+        <div><p class="eyebrow">MY RESONATORS</p><h1>내 캐릭터</h1><p>보유 캐릭터와 육성 상태를 기록하면 내 계정에 맞는 파티를 구성해 드려요.</p></div>
+        <div class="stats"><div><strong id="ownedCount">0</strong><span>보유</span></div><div><strong id="readyCount">0</strong><span>실전 가능</span></div><div><strong id="totalCount">0</strong><span>전체</span></div></div>
+      </div>
+
+      <div class="toolbar">
+        <label class="search"><span>⌕</span><input id="searchInput" placeholder="이름, 속성, 역할로 검색"></label>
+        <select id="elementFilter" aria-label="속성 필터"><option value="">속성: 전체</option><option>응결</option><option>용융</option><option>전도</option><option>기류</option><option>회절</option><option>인멸</option></select>
+        <select id="weaponFilter" aria-label="무기 필터"><option value="">무기: 전체</option><option>직검</option><option>대검</option><option>권갑</option><option>권총</option><option>증폭기</option></select>
+        <label class="owned-only"><input type="checkbox" id="ownedOnly"><span></span> 보유만 보기</label>
+      </div>
+
+      <div class="element-tabs" id="elementTabs"></div>
+      <div class="character-grid" id="characterGrid" aria-live="polite"></div>
+      <div class="empty" id="emptyState" hidden>조건에 맞는 캐릭터가 없습니다.</div>
+    </section>
+
+    <section id="plannerView" hidden>
+      <div class="hero compact"><div><p class="eyebrow">TEAM OPTIMIZER</p><h1>파티 플래너</h1><p>여러 파티에 핵심 캐릭터가 겹치지 않도록 보유풀 전체를 배분합니다.</p></div><button class="primary" id="recommendButton">✦ 자동 파티 구성</button></div>
+      <div class="planner-controls"><label>구성할 파티 수 <select id="teamCount"><option>1</option><option>2</option><option selected>3</option><option>4</option><option value="all">전체</option></select></label><p id="recommendMessage">실전 가능한 보유 캐릭터를 우선 사용합니다.</p></div>
+      <div class="team-results" id="teamResults"></div>
+    </section>
+  </main>
+
+  <dialog id="characterDialog">
+    <form method="dialog" class="dialog-card">
+      <button class="close" value="cancel" aria-label="닫기">×</button>
+      <div class="dialog-portrait"><img id="dialogImage" alt=""><div class="dialog-gradient"></div><div class="dialog-title"><span id="dialogElement"></span><h2 id="dialogName"></h2><p id="dialogMeta"></p></div></div>
+      <div class="dialog-fields">
+        <label class="own-switch"><input id="dialogOwned" type="checkbox"><span></span><b>이 캐릭터를 보유하고 있어요</b></label>
+        <div class="field-row"><label>공명 체인<select id="dialogSequence"></select></label><label>레벨<div class="level-control"><input id="dialogLevel" type="number" min="1" max="90"><button type="button" id="maxLevel">MAX 90</button></div></label></div>
+        <label>육성 상태<select id="dialogBuild"><option>미육성</option><option>육성 중</option><option>실전 가능</option><option>완성</option></select></label>
+        <div class="field-row"><label>최대 사용 횟수<input id="dialogUses" type="number" min="0" max="10"></label><label>무기 재련<select id="dialogWeaponRank"><option value="1">R1</option><option value="2">R2</option><option value="3">R3</option><option value="4">R4</option><option value="5">R5</option></select></label></div>
+        <label class="weapon-toggle"><input id="dialogSignature" type="checkbox"><span>◆</span><b>전용 무기 보유</b><small>추천 점수에 무기 적합도를 반영합니다</small></label>
+        <button class="primary wide" id="saveCharacter" value="default">저장하기</button>
+      </div>
+    </form>
+  </dialog>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

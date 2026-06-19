@@ -1,0 +1,129 @@
+{
+  "version": "2026.06.12",
+  "meta_patch": "3.4",
+  "meta_updated_at": "2026-06-19",
+  "high_end_cores": [
+    ["hiyuki","lucilla","chisa"],
+    ["aemeath","denia","chisa"],
+    ["cartethyia","ciaccona","chisa"],
+    ["lucy","rebecca","mornye"],
+    ["galbrena","qiuyuan","shorekeeper"],
+    ["phrolova","cantarella","qiuyuan"],
+    ["augusta","iuno","shorekeeper"],
+    ["sigrika","qiuyuan","shorekeeper"],
+    ["luuk-herssen","lynae","mornye"],
+    ["zani","phoebe","shorekeeper"],
+    ["carlotta","zhezhi","shorekeeper"]
+  ],
+  "templates": [
+    {"id":"hiyuki_bis","members":["hiyuki","lucilla","chisa"],"score":100,"label":"히유키 응결 침식 최고점","tags":["공명 해방","응결 침식","이상 효과"]},
+    {"id":"hiyuki_lynae","members":["hiyuki","lucilla","lynae"],"score":93,"label":"히유키 공명 해방 대체 조합","tags":["공명 해방","응결 침식"]},
+    {"id":"hiyuki_lucilla_shorekeeper","members":["hiyuki","lucilla","shorekeeper"],"score":96,"tier":"high","label":"치사 부재 시 히유키·루실라·파수인 고점","tags":["공명 해방","응결 침식","치명타"]},
+    {"id":"hiyuki_lucilla_verina","members":["hiyuki","lucilla","verina"],"score":94,"tier":"high","label":"치사 부재 시 히유키·루실라·벨리나 조합","tags":["공명 해방","응결 침식","피해 증가"]},
+    {"id":"hiyuki_lucilla_mornye","members":["hiyuki","lucilla","mornye"],"score":93,"tier":"high","label":"치사 부재 시 히유키·루실라·모니에 조합","tags":["공명 해방","응결 침식","조화도 파괴"]},
+    {"id":"aemeath_bis","members":["aemeath","lynae","mornye"],"score":99,"label":"에이메스 조화도 파괴 최고점","tags":["공명 해방","조화도 파괴"]},
+    {"id":"aemeath_denia_chisa","members":["aemeath","denia","chisa"],"score":100,"label":"에이메스 이상 효과 최고점","tags":["이상 효과","용융 폭발","조화도 파괴"]},
+    {"id":"aemeath_denia","members":["aemeath","denia","mornye"],"score":97,"label":"에이메스 이상 효과 고점 조합","tags":["이상 효과","용융 폭발","조화도 파괴"]},
+    {"id":"iuno_liberation","members":["iuno","lynae","mornye"],"positions":{"iuno":"carry","lynae":"amplifier","mornye":"support"},"score":96,"tier":"bis","label":"아우구스타 부재 시 유노 조화도 파괴 온필드 최고점","tags":["공명 해방","조화도 파괴"]},
+    {"id":"calcharo_liberation","members":["calcharo","lynae","mornye"],"score":78,"label":"공명 해방 범용 대체 조합","tags":["공명 해방"]},
+    {"id":"sigrika_bis","members":["sigrika","qiuyuan","shorekeeper"],"score":98,"tier":"bis","label":"시그리카·구원 파수인 최고점","tags":["에코 스킬","기류","치명타"]},
+    {"id":"cartethyia_bis","members":["cartethyia","ciaccona","chisa"],"score":98,"tier":"bis","label":"카르티시아·샤콘·치사 최고점","tags":["기류 침식","이상 효과","방어력 감소"],"source":"https://www.gamsgo.com/blog/cartethyia-build"},
+    {"id":"cartethyia_aero_rover","members":["cartethyia","ciaccona","rover-aero"],"score":96,"tier":"high","label":"카르티시아·샤콘·기류 방랑자 고점 대체","tags":["기류 침식"]},
+    {"id":"phrolova_bis","members":["phrolova","cantarella","qiuyuan"],"score":98,"tier":"bis","label":"플로로·칸타렐라·구원 최고점","tags":["에코 스킬","인멸","치명타 피해"]},
+    {"id":"phrolova_roccia","members":["phrolova","cantarella","roccia"],"score":94,"tier":"alternative","label":"플로로 인멸 대체 조합","tags":["에코 스킬","인멸"]},
+    {"id":"phrolova_cantarella_shorekeeper","members":["phrolova","cantarella","shorekeeper"],"score":95,"label":"플로로·칸타렐라 파수인 조합","tags":["에코 스킬","인멸","치명타"]},
+    {"id":"phrolova_cantarella_verina","members":["phrolova","cantarella","verina"],"score":91,"tier":"alternative","label":"플로로·칸타렐라 벨리나 대체 조합","tags":["에코 스킬","인멸","피해 증가"]},
+    {"id":"camellya_bis","members":["camellya","roccia","shorekeeper"],"score":94,"tier":"bis","label":"카멜리아·로코코 최고점","tags":["일반 공격","인멸","치명타"]},
+    {"id":"camellya_sanhua_shorekeeper","members":["camellya","sanhua","shorekeeper"],"score":90,"tier":"alternative","label":"카멜리아 일반 공격 대체 조합","tags":["일반 공격","인멸"]},
+    {"id":"camellya_sanhua_baizhi","members":["camellya","sanhua","baizhi"],"score":89,"label":"카멜리아·산화·설지 일반 공격 조합","tags":["일반 공격","인멸","피해 증가"]},
+    {"id":"jinhsi_bis","members":["jinhsi","zhezhi","shorekeeper"],"score":92,"label":"금희 협동 공격 조합","tags":["공명 스킬","협동 공격"]},
+    {"id":"zani_bis","members":["zani","phoebe","shorekeeper"],"score":92,"label":"젠니 회절 침식 조합","tags":["회절 침식"]},
+    {"id":"augusta_bis","members":["augusta","iuno","shorekeeper"],"positions":{"augusta":"carry","iuno":"amplifier","shorekeeper":"support"},"score":99,"tier":"bis","label":"아우구스타·유노 최고점","tags":["강공","전도","피해 증가"]},
+    {"id":"jiyan_bis","members":["jiyan","mortefi","shorekeeper"],"score":88,"label":"기염 강공 조합","tags":["강공","기류"]}
+    ,{"id":"carlotta_zhezhi","members":["carlotta","zhezhi","shorekeeper"],"score":92,"label":"카를로타 공명 스킬 조합","tags":["공명 스킬","응결"]}
+    ,{"id":"carlotta_zhezhi_verina","members":["carlotta","zhezhi","verina"],"score":93,"label":"카를로타·절지 벨리나 조합","tags":["공명 스킬","응결","피해 증가"]}
+    ,{"id":"carlotta_zhezhi_baizhi","members":["carlotta","zhezhi","baizhi"],"score":86,"label":"카를로타 공명 스킬 대체 조합","tags":["공명 스킬","응결"]}
+    ,{"id":"carlotta_sanhua_baizhi","members":["carlotta","sanhua","baizhi"],"score":84,"label":"카를로타·산화·설지 절지 부재 대체 조합","tags":["응결","피해 증가"]}
+    ,{"id":"galbrena_lupa","members":["galbrena","lupa","mornye"],"score":92,"label":"갈브레나 용융 에코 조합","tags":["에코 스킬","용융"]}
+    ,{"id":"galbrena_qiuyuan_shorekeeper","members":["galbrena","qiuyuan","shorekeeper"],"score":96,"tier":"bis","label":"갈브레나·구원·파수인 최고점","tags":["에코 스킬","강공","치명타 피해","용융"]}
+    ,{"id":"galbrena_iuno_shorekeeper","members":["galbrena","iuno","shorekeeper"],"positions":{"galbrena":"carry","iuno":"amplifier","shorekeeper":"support"},"score":92,"tier":"alternative","label":"갈브레나·유노·파수인 강공 조합","tags":["강공","에코 스킬","용융"]}
+    ,{"id":"lucy_rebecca_mornye","members":["lucy","rebecca","mornye"],"score":99,"label":"루시·레베카 Hack 최고점","tags":["Hack","강공","조화도 파괴"]}
+    ,{"id":"lucy_rebecca_shorekeeper","members":["lucy","rebecca","shorekeeper"],"score":95,"label":"루시·레베카 파수인 대체 조합","tags":["Hack","강공","피해 증가"]}
+    ,{"id":"lucy_rebecca_verina","members":["lucy","rebecca","verina"],"score":94,"label":"루시·레베카 벨리나 대체 조합","tags":["Hack","강공","피해 증가"]}
+    ,{"id":"jinhsi_yinlin_verina","members":["jinhsi","yinlin","verina"],"score":93,"label":"금희·음림 협동 공격 조합","tags":["공명 스킬","협동 공격","피해 증가"]}
+    ,{"id":"jinhsi_yinlin_shorekeeper","members":["jinhsi","yinlin","shorekeeper"],"score":90,"label":"금희·음림 파수인 조합","tags":["공명 스킬","협동 공격","치명타"]}
+    ,{"id":"jinhsi_yuanwu_baizhi","members":["jinhsi","yuanwu","baizhi"],"score":82,"tier":"expansion","label":"금희 협동 공격 보유풀 확장 조합","tags":["공명 스킬","협동 공격"]}
+    ,{"id":"luuk_bis","members":["luuk-herssen","lynae","mornye"],"score":97,"tier":"bis","label":"루크·린네·모니에 최고점","tags":["일반 공격","조화도 파괴"]}
+    ,{"id":"xiangli_yao_bis","members":["xiangli-yao","lynae","mornye"],"score":94,"tier":"bis","label":"상리요 조화도 파괴 최고점","tags":["공명 해방","전도","조화도 파괴"]}
+    ,{"id":"xiangli_yao_yinlin","members":["xiangli-yao","yinlin","shorekeeper"],"score":89,"tier":"alternative","label":"상리요·음림 전도 대체 조합","tags":["공명 해방","전도"]}
+    ,{"id":"changli_brant_lupa","members":["changli","brant","lupa"],"score":93,"tier":"bis","label":"장리·브렌트·루파 용융 최고점","tags":["공명 스킬","용융"]}
+    ,{"id":"encore_changli","members":["encore","changli","shorekeeper"],"score":87,"tier":"bis","label":"앙코·장리 용융 듀얼 딜러 조합","tags":["일반 공격","용융"]}
+    ,{"id":"lingyang_zhezhi","members":["lingyang","zhezhi","shorekeeper"],"score":83,"tier":"bis","label":"능양·절지 응결 조합","tags":["일반 공격","응결"]}
+    ,{"id":"chixia_changli","members":["chixia","changli","shorekeeper"],"score":80,"tier":"bis","label":"치샤·장리 용융 조합","tags":["공명 해방","용융"]}
+    ,{"id":"danjin_roccia","members":["danjin","roccia","shorekeeper"],"score":84,"tier":"bis","label":"단근·로코코 인멸 조합","tags":["인멸","일반 공격"]}
+    ,{"id":"havoc_rover_roccia","members":["rover-havoc","roccia","shorekeeper"],"score":83,"tier":"bis","label":"인멸 방랑자·로코코 조합","tags":["인멸","일반 공격"]}
+    ,{"id":"jinhsi_zhezhi_youhu","members":["jinhsi","zhezhi","youhu"],"score":86,"tier":"alternative","label":"금희·절지·유호 협동 공격 조합","tags":["공명 스킬","협동 공격"]}
+    ,{"id":"jinhsi_lumi","members":["jinhsi","lumi","shorekeeper"],"score":84,"tier":"alternative","label":"금희·루미 공명 스킬 대체 조합","tags":["공명 스킬","협동 공격"]}
+    ,{"id":"calcharo_yinlin_buling","members":["calcharo","yinlin","buling"],"score":81,"tier":"expansion","label":"카카루·음림·복링 공명 해방 조합","tags":["공명 해방","전도"]}
+    ,{"id":"encore_yangyang","members":["encore","yangyang","shorekeeper"],"score":79,"tier":"expansion","label":"앙코·양양 순환 대체 조합","tags":["공명 해방","용융"]}
+    ,{"id":"jiyan_aalto","members":["jiyan","aalto","shorekeeper"],"score":79,"tier":"alternative","label":"기염·알토 기류 대체 조합","tags":["강공","기류"]}
+    ,{"id":"calcharo_jianxin","members":["calcharo","jianxin","shorekeeper"],"score":80,"tier":"alternative","label":"카카루·감심 공명 해방 조합","tags":["공명 해방","전도"]}
+    ,{"id":"zani_spectro_rover","members":["zani","rover-spectro","shorekeeper"],"score":84,"tier":"alternative","label":"젠니·회절 방랑자 이상 효과 대체 조합","tags":["회절 침식","이상 효과"]}
+    ,{"id":"changli_taoqi","members":["changli","taoqi","shorekeeper"],"score":81,"tier":"alternative","label":"장리·도기 공명 스킬 대체 조합","tags":["공명 스킬","용융"]}
+  ],
+  "profiles": {
+    "hiyuki":{"position":"carry","meta_value":10,"damage":["공명 해방","응결 침식"],"archetypes":["응결 침식","이상 효과"]},
+    "lucilla":{"position":"amplifier","provides":["공명 해방","응결 침식","에코 스킬"],"archetypes":["응결 침식","이상 효과"]},
+    "chisa":{"position":"support","provides":["이상 효과","피해 증가"],"archetypes":["이상 효과","응결 침식"],"support_value":9,"sustain":true},
+    "aemeath":{"position":"carry","meta_value":10,"damage":["공명 해방","조화도 파괴","이상 효과","용융 폭발"],"archetypes":["조화도 파괴","이상 효과","용융 폭발"]},
+    "denia":{"position":"amplifier","provides":["이상 효과","용융 폭발","조화도 파괴","용융"],"archetypes":["이상 효과","용융 폭발","조화도 파괴"]},
+    "lynae":{"position":"amplifier","provides":["공명 해방","피해 증가","조화도 파괴"],"archetypes":["조화도 파괴"]},
+    "mornye":{"position":"support","provides":["공명 해방","조화도 파괴","오프튠"],"archetypes":["조화도 파괴"],"support_value":9,"sustain":true},
+    "iuno":{"position":"carry","meta_value":8,"damage":["공명 해방","강공"],"archetypes":["공명 해방"]},
+    "luuk-herssen":{"position":"carry","meta_value":8.5,"damage":["일반 공격","조화도 파괴","회절"],"archetypes":["조화도 파괴"]},
+    "xiangli-yao":{"position":"carry","meta_value":4.5,"damage":["공명 해방","전도"],"archetypes":["공명 해방","전도"]},
+    "lingyang":{"position":"carry","damage":["일반 공격","응결"],"archetypes":["일반 공격","응결"]},
+    "chixia":{"position":"carry","damage":["공명 해방","용융"],"archetypes":["공명 해방","용융"]},
+    "encore":{"position":"carry","damage":["일반 공격","용융"],"archetypes":["일반 공격","용융"]},
+    "danjin":{"position":"carry","damage":["인멸","강공"],"archetypes":["인멸"]},
+    "rover-havoc":{"position":"carry","damage":["인멸","공명 해방"],"archetypes":["인멸"]},
+    "calcharo":{"position":"carry","damage":["공명 해방","전도"],"archetypes":["공명 해방"]},
+    "sigrika":{"position":"carry","meta_value":9,"damage":["공명 해방","기류"],"archetypes":["기류"]},
+    "qiuyuan":{"position":"amplifier","provides":["에코 스킬","치명타 피해","기류"],"archetypes":["에코 스킬","기류"]},
+    "ciaccona":{"position":"amplifier","provides":["기류","기류 침식"],"archetypes":["기류 침식","기류"]},
+    "cartethyia":{"position":"carry","meta_value":8,"damage":["기류 침식","기류"],"archetypes":["기류 침식"]},
+    "rover-aero":{"position":"support","provides":["기류 침식"],"archetypes":["기류 침식"],"support_value":6,"sustain":true},
+    "phrolova":{"position":"carry","meta_value":9,"damage":["에코 스킬","인멸"],"archetypes":["에코 스킬"]},
+    "cantarella":{"position":"support","provides":["에코 스킬","인멸"],"archetypes":["에코 스킬"],"support_value":7,"sustain":true},
+    "roccia":{"position":"amplifier","provides":["인멸","일반 공격"],"archetypes":["인멸"]},
+    "camellya":{"position":"carry","meta_value":5,"damage":["일반 공격","인멸"],"archetypes":["인멸"]},
+    "sanhua":{"position":"amplifier","provides":["일반 공격"],"archetypes":["일반 공격"]},
+    "jinhsi":{"position":"carry","meta_value":5.5,"damage":["공명 스킬","협동 공격"],"archetypes":["협동 공격"]},
+    "zhezhi":{"position":"amplifier","provides":["공명 스킬","협동 공격","응결"],"archetypes":["협동 공격"]},
+    "carlotta":{"position":"carry","meta_value":6,"damage":["공명 스킬","응결"],"archetypes":["공명 스킬","응결"]},
+    "galbrena":{"position":"carry","meta_value":9,"damage":["에코 스킬","강공","용융"],"archetypes":["에코 스킬","강공","용융"]},
+    "lupa":{"position":"amplifier","provides":["용융","공명 해방","에코 스킬"],"archetypes":["용융","에코 스킬"]},
+    "lucy":{"position":"carry","meta_value":10,"damage":["Hack","강공","회절"],"archetypes":["Hack","강공"]},
+    "rebecca":{"position":"amplifier","provides":["Hack","강공","피해 증가","공격력"],"archetypes":["Hack","강공"]},
+    "yinlin":{"position":"amplifier","provides":["공명 해방","전도","협동 공격"],"archetypes":["공명 해방","전도"]},
+    "yuanwu":{"position":"amplifier","provides":["협동 공격","전도"],"archetypes":["협동 공격"]},
+    "lumi":{"position":"amplifier","provides":["공명 스킬","전도"],"archetypes":["공명 스킬"]},
+    "yangyang":{"position":"amplifier","provides":["공명 해방","에너지"],"archetypes":["공명 해방"]},
+    "aalto":{"position":"amplifier","provides":["기류"],"archetypes":["기류"]},
+    "rover-spectro":{"position":"amplifier","provides":["회절 침식","이상 효과"],"archetypes":["회절 침식","이상 효과"]},
+    "changli":{"position":"carry","damage":["공명 스킬","용융"],"archetypes":["공명 스킬","용융"]},
+    "zani":{"position":"carry","meta_value":7,"damage":["회절 침식","중격"],"archetypes":["회절 침식"]},
+    "phoebe":{"position":"amplifier","provides":["회절 침식"],"archetypes":["회절 침식"]},
+    "augusta":{"position":"carry","meta_value":9,"damage":["강공","전도"],"archetypes":["강공"]},
+    "jiyan":{"position":"carry","damage":["강공","기류"],"archetypes":["강공"]},
+    "mortefi":{"position":"amplifier","provides":["강공","협동 공격"],"archetypes":["강공"]},
+    "shorekeeper":{"position":"support","provides":["피해 증가","치명타"],"archetypes":["범용"],"support_value":10,"sustain":true},
+    "verina":{"position":"support","provides":["피해 증가","협동 공격"],"archetypes":["범용"],"support_value":8,"sustain":true},
+    "baizhi":{"position":"support","provides":["피해 증가"],"archetypes":["범용"],"support_value":4,"sustain":true},
+    "buling":{"position":"support","provides":["공명 해방"],"archetypes":["범용"],"support_value":6,"sustain":true},
+    "jianxin":{"position":"support","provides":["공명 해방"],"archetypes":["공명 해방"],"support_value":5,"sustain":true},
+    "brant":{"position":"support","provides":["용융","피해 증가"],"archetypes":["용융"],"support_value":7,"sustain":true},
+    "youhu":{"position":"support","provides":["협동 공격"],"archetypes":["협동 공격"],"support_value":5,"sustain":true},
+    "taoqi":{"position":"support","provides":["공명 스킬"],"archetypes":["범용"],"support_value":4,"sustain":true}
+  }
+}
