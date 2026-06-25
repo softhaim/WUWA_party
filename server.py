@@ -128,6 +128,8 @@ def save_roster(items: list[dict[str, Any]]) -> None:
 BUILD_POINTS = {"미육성": 0, "육성 중": 8, "실전 가능": 18, "완성": 25}
 BUILD_READINESS = {"미육성": 0.0, "육성 중": 0.45, "실전 가능": 0.78, "완성": 1.0}
 MIN_INFERRED_TEAM_SCORE = 60.0
+SCORE_WEIGHTS = {"composition": 44, "meta": 10, "investment": 33, "build": 13}
+SEQUENCE_QUALITY = {0: 0.78, 1: 0.83, 2: 0.87, 3: 0.91, 4: 0.94, 5: 0.97, 6: 1.0}
 
 
 def load_team_rules() -> dict[str, Any]:
@@ -170,6 +172,35 @@ def effective_readiness(member: dict[str, Any]) -> float:
     return max(readiness, level_floor)
 
 
+def investment_quality(member: dict[str, Any]) -> float:
+    """Return 0..1 investment from sequence and signature weapon state.
+
+    S0 is a functional character rather than zero investment. Sequences have
+    enough headroom to let an older, highly invested carry overtake a newer
+    low-investment carry when the rest of the team is genuinely complete.
+    """
+    state = member["state"]
+    sequence = max(0, min(6, int(state.get("sequence", 0))))
+    quality = SEQUENCE_QUALITY[sequence]
+    if state.get("signature_weapon"):
+        quality += 0.12 + max(0, int(state.get("weapon_rank", 1)) - 1) * 0.025
+    return min(1.0, quality)
+
+
+def weighted_member_average(
+    members: tuple[dict[str, Any], ...],
+    positions: dict[str, str],
+    values: dict[str, float],
+) -> float:
+    role_weights = {"carry": 0.50, "amplifier": 0.30, "support": 0.20}
+    weighted = [
+        (values[member["id"]], role_weights.get(positions[member["id"]], 0.25))
+        for member in members
+    ]
+    total_weight = sum(weight for _, weight in weighted)
+    return sum(value * weight for value, weight in weighted) / max(total_weight, 0.01)
+
+
 def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) -> dict[str, Any] | None:
     member_ids = {member["id"] for member in members}
     template = next((item for item in rules["templates"] if set(item["members"]) == member_ids), None)
@@ -178,24 +209,36 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
     if not carries:
         return None
 
+    member_positions = template.get("positions", {}) if template else {}
+    resolved_positions = {
+        member["id"]: member_positions.get(member["id"], profiles[member["id"]].get("position", "amplifier"))
+        for member in members
+    }
     investment = sum(member["power"] for member in members) / len(members)
-    readiness = {member["id"]: effective_readiness(member) for member in members}
+    readiness = {}
+    for member in members:
+        value = effective_readiness(member)
+        if member["state"].get("build_status") == "미육성":
+            if resolved_positions[member["id"]] == "carry":
+                value = min(value, 0.35)
+            elif resolved_positions[member["id"]] == "amplifier":
+                value = min(value, 0.65)
+        readiness[member["id"]] = value
+    investments = {member["id"]: investment_quality(member) for member in members}
     readiness_penalty = sum(1.0 - value for value in readiness.values()) * 8
-    core_members = [member for member in members if profiles[member["id"]].get("position") != "support"]
+    core_members = [member for member in members if resolved_positions[member["id"]] != "support"]
     core_readiness = sum(readiness[member["id"]] for member in core_members) / max(1, len(core_members))
+    weakest_core_readiness = min((readiness[member["id"]] for member in core_members), default=1.0)
     support_leverage = sum(
         profile.get("support_value", 3) * core_readiness * 1.2
         for profile in profiles.values()
         if profile.get("position") == "support"
     )
     if template:
-        # Keep meta-tier differences visible even when every member is fully built.
-        # Investment can move a template by roughly ±2, but cannot flatten every
-        # high-end composition to the same 100 score.
-        score = min(100.0, template["score"] - 5 + investment * 0.12 - readiness_penalty + support_leverage * 0.08)
-        reason = f"메타 조합 · {template['label']}"
+        preview = template.get("status") == "preview"
+        reason = f"{'출시 전 프리뷰' if preview else '메타 조합'} · {template['label']}"
         tags = template["tags"]
-        confidence = "높음"
+        confidence = "프리뷰" if preview else "높음"
     else:
         best_carry = carries[0]
         carry_profile = profiles[best_carry["id"]]
@@ -232,7 +275,25 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         reason = f"호환 조합 · {best_carry['name_ko']}의 {compatible} 조건을 공유"
         confidence = "중간" if tags else "낮음"
 
-    member_positions = template.get("positions", {}) if template else {}
+    primary_carries = [
+        member for member in members if resolved_positions[member["id"]] == "carry"
+    ] or carries
+    primary_carry = max(
+        primary_carries,
+        key=lambda member: profiles[member["id"]].get("meta_value", 5),
+    )
+    composition_quality = (template["score"] if template else min(88.0, score)) / 100
+    meta_quality = min(1.0, profiles[primary_carry["id"]].get("meta_value", 5) / 10)
+    investment_average = weighted_member_average(members, resolved_positions, investments)
+    readiness_average = weighted_member_average(members, resolved_positions, readiness)
+    score_details = {
+        "composition": round(composition_quality * SCORE_WEIGHTS["composition"], 1),
+        "meta": round(meta_quality * SCORE_WEIGHTS["meta"], 1),
+        "investment": round(investment_average * SCORE_WEIGHTS["investment"], 1),
+        "build": round(readiness_average * SCORE_WEIGHTS["build"], 1),
+    }
+    score = min(100.0, sum(score_details.values()))
+
     support_alignment = sum(
         profile.get("support_value", 3) * core_readiness * 2
         for profile in profiles.values()
@@ -242,7 +303,10 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
     # the global allocator prefer a character's actual BiS core, while retaining
     # alternatives for roster expansion after a contested unit is consumed.
     tier_bonus = {"bis": 10, "high": 7, "alternative": 3, "expansion": 0}
-    high_end_cores = {frozenset(core) for core in rules.get("high_end_cores", [])}
+    high_end_cores = {
+        frozenset(core)
+        for core in rules.get("high_end_cores", []) + rules.get("preview_high_end_cores", [])
+    }
     if frozenset(member_ids) in high_end_cores:
         effective_tier = "bis"
     elif template and template["score"] >= 95:
@@ -257,6 +321,27 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
     allocation_score = score + (3 if template else 0)
     if template:
         allocation_score += tier_bonus.get(effective_tier, 0)
+        # A tiny recency tie-breaker keeps newly released/preview BiS cores from
+        # losing to an older core only because of a few tenths of scarcity math.
+        # It is intentionally too small to overcome a real composition or build gap.
+        if template.get("status") == "preview" and effective_tier == "bis":
+            allocation_score += 1.0
+    premium_support_value = max(
+        (
+            profiles[member["id"]].get("support_value", 0)
+            for member in members
+            if resolved_positions[member["id"]] == "support"
+        ),
+        default=0,
+    )
+    # If an old or fallback team contains an unbuilt core, it should not spend a
+    # scarce premium support just because the static template is verified. This
+    # keeps teams such as Lv.1 Chixia + Changli from taking Shorekeeper while
+    # newer/complete teams still need that crit support. Combat score remains
+    # visible; this only changes global resource allocation priority.
+    if premium_support_value >= 8 and weakest_core_readiness < 0.70:
+        allocation_score -= (0.70 - weakest_core_readiness) * premium_support_value * 2.8
+    premium_core_mismatch = premium_support_value >= 8 and weakest_core_readiness < 0.45
     # Allocation value is account-aware: recent high-value carries with actual
     # investment should receive contested premium supports before older or
     # low-investment cores. Combat score remains separate and visible in the UI.
@@ -269,15 +354,6 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         for member in carries
     )
     allocation_score += carry_investment
-    primary_carries = [
-        member
-        for member in members
-        if member_positions.get(member["id"], profiles[member["id"]].get("position")) == "carry"
-    ] or carries
-    primary_carry = max(
-        primary_carries,
-        key=lambda member: profiles[member["id"]].get("meta_value", 5),
-    )
     return {
         "key": ":".join(sorted(member_ids)),
         "members": members,
@@ -287,10 +363,13 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         "tags": tags,
         "confidence": confidence,
         "readiness": round(sum(readiness.values()) / len(readiness) * 100),
+        "score_details": score_details,
         "member_positions": member_positions,
+        "effective_tier": effective_tier,
         "primary_carry_id": primary_carry["id"],
         "carry_investment": round(carry_investment, 1),
         "opportunity_bonus": 0.0,
+        "premium_core_mismatch": premium_core_mismatch,
     }
 
 
@@ -321,12 +400,24 @@ def apply_opportunity_value(candidates: list[dict[str, Any]]) -> None:
             ):
                 continue
             alternatives = [
-                alternative["score"]
+                alternative
                 for alternative in by_carry.get(carry_id, [])
                 if member_id not in {item["id"] for item in alternative["members"]}
             ]
             if alternatives:
-                marginal_losses.append(max(0.0, candidate["score"] - max(alternatives)))
+                best_alternative = max(alternatives, key=lambda item: item["score"])
+                loss = max(0.0, candidate["score"] - best_alternative["score"])
+                # Two verified BiS variants within a small practical margin are
+                # interchangeable. Pricing that tiny difference as scarcity made
+                # Hiyuki hoard Chisa even though Suisui is an equal high-end slot,
+                # preventing Xuanling and another Chisa core from being completed.
+                if (
+                    candidate.get("effective_tier") == "bis"
+                    and best_alternative.get("effective_tier") == "bis"
+                    and loss <= 1.5
+                ):
+                    loss = 0.0
+                marginal_losses.append(loss)
         # The same raw upgrade is worth more on a recent, highly invested carry.
         # This makes sequence/signature investment affect who receives a scarce
         # support, instead of merely raising both of that carry's variants equally.
@@ -474,6 +565,7 @@ def serialize_teams(selected: list[dict[str, Any]], rules: dict[str, Any]) -> li
             "tags": candidate["tags"],
             "confidence": candidate["confidence"],
             "readiness": candidate.get("readiness", 0),
+            "score_details": candidate.get("score_details", {}),
         })
     return teams
 
@@ -507,7 +599,12 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
 
     candidates = [evaluated for group in combinations(available, 3) if (evaluated := evaluate_team(group, rules))]
     if str(requested_count) == "all":
-        candidates = [candidate for candidate in candidates if candidate["score"] >= MIN_INFERRED_TEAM_SCORE]
+        candidates = [
+            candidate
+            for candidate in candidates
+            if candidate["score"] >= MIN_INFERRED_TEAM_SCORE
+            and not candidate.get("premium_core_mismatch")
+        ]
     apply_opportunity_value(candidates)
     candidates.sort(key=lambda item: item["allocation_score"], reverse=True)
     if str(requested_count) == "all":
@@ -569,6 +666,18 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class AppHandler(SimpleHTTPRequestHandler):
+    def end_headers(self) -> None:
+        # Allow the bundled index.html to work even when it was opened directly
+        # through file:// instead of through the local HTTP server.
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        super().end_headers()
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.end_headers()
+
     def _json(self, data: Any, status: int = 200) -> None:
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)

@@ -8,12 +8,150 @@ import server
 
 
 class ResonanceLabTests(unittest.TestCase):
+    def test_static_bundle_supports_direct_file_open(self):
+        index = (server.STATIC / "index.html").read_text(encoding="utf-8")
+        app = (server.STATIC / "app.js").read_text(encoding="utf-8")
+        self.assertIn('href="./styles.css"', index)
+        self.assertIn('src="./app.js?', index)
+        self.assertIn('location.protocol === "file:"', app)
+        self.assertIn("http://127.0.0.1:8000", app)
+        self.assertIn("imageUrl(m.image)", app)
+
     def test_catalog_is_valid_and_unique(self):
         characters = server.load_characters()
-        self.assertEqual(len(characters), 53)
-        self.assertEqual(len({c["id"] for c in characters}), 53)
+        self.assertEqual(len(characters), 55)
+        self.assertEqual(len({c["id"] for c in characters}), 55)
         self.assertTrue(all(c["image"].startswith("/api/image/") for c in characters))
         self.assertTrue(all(c["image_source"].startswith("https://") for c in characters))
+
+    def test_xuanling_is_distinct_from_base_yangyang(self):
+        characters = {character["id"]: character for character in server.load_characters()}
+        self.assertEqual(characters["yangyang"]["element_ko"], "기류")
+        self.assertEqual(characters["yangyang-xuanling"]["element_ko"], "인멸")
+        self.assertTrue(characters["yangyang-xuanling"]["preview"])
+
+    def test_dynamic_score_rewards_complete_latest_bis(self):
+        ids = ("hiyuki", "lucilla", "chisa")
+        complete = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1, "sequence": 6, "signature_weapon": True}
+            for cid in ids
+        }
+        unfinished = {
+            cid: {"owned": True, "level": 80, "build_status": "육성 중", "max_uses": 1, "sequence": 0, "signature_weapon": False}
+            for cid in ids
+        }
+        complete_team = server.recommend({"roster": complete, "team_count": 1})["teams"][0]
+        unfinished_team = server.recommend({"roster": unfinished, "team_count": 1})["teams"][0]
+        self.assertEqual(complete_team["score"], 100)
+        self.assertGreater(complete_team["score"], unfinished_team["score"])
+        self.assertEqual(set(complete_team["score_details"]), {"composition", "meta", "investment", "build"})
+
+    def test_sequence_and_weapon_change_visible_team_score(self):
+        ids = ("hiyuki", "lucilla", "chisa")
+        base = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1, "sequence": 0, "signature_weapon": False}
+            for cid in ids
+        }
+        invested = {cid: dict(state) for cid, state in base.items()}
+        invested["hiyuki"].update({"sequence": 2, "signature_weapon": True})
+        base_team = server.recommend({"roster": base, "team_count": 1})["teams"][0]
+        invested_team = server.recommend({"roster": invested, "team_count": 1})["teams"][0]
+        self.assertGreater(invested_team["score"], base_team["score"])
+        self.assertGreater(
+            invested_team["score_details"]["investment"],
+            base_team["score_details"]["investment"],
+        )
+
+    def test_complete_high_sequence_older_team_can_beat_unfinished_latest_team(self):
+        old_roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1, "sequence": 6, "signature_weapon": True}
+            for cid in ("camellya", "roccia", "shorekeeper")
+        }
+        latest_roster = {
+            cid: {"owned": True, "level": 80, "build_status": "육성 중", "max_uses": 1, "sequence": 0, "signature_weapon": False}
+            for cid in ("hiyuki", "lucilla", "chisa")
+        }
+        old_score = server.recommend({"roster": old_roster, "team_count": 1})["teams"][0]["score"]
+        latest_score = server.recommend({"roster": latest_roster, "team_count": 1})["teams"][0]["score"]
+        self.assertGreater(old_score, latest_score)
+
+    def test_xuanling_suisui_chisa_preview_core_is_recommended(self):
+        roster = {cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1} for cid in ("yangyang-xuanling", "suisui", "chisa")}
+        team = server.recommend({"roster": roster, "team_count": 1})["teams"][0]
+        self.assertEqual({member["id"] for member in team["members"]}, set(roster))
+        self.assertEqual(team["confidence"], "프리뷰")
+        self.assertIn("출시 전", team["reason"])
+
+    def test_suisui_unlocks_hiyuki_lucilla_preview_team(self):
+        roster = {cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1} for cid in ("hiyuki", "lucilla", "suisui")}
+        team = server.recommend({"roster": roster, "team_count": 1})["teams"][0]
+        self.assertEqual({member["id"] for member in team["members"]}, set(roster))
+        self.assertEqual(team["confidence"], "프리뷰")
+
+    def test_no_suisui_preserves_current_hiyuki_core(self):
+        roster = {cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1} for cid in ("hiyuki", "lucilla", "chisa")}
+        team = server.recommend({"roster": roster, "team_count": 1})["teams"][0]
+        self.assertEqual({member["id"] for member in team["members"]}, set(roster))
+        self.assertEqual(team["confidence"], "높음")
+
+    def test_single_suisui_goes_to_xuanling_when_hiyuki_has_current_core(self):
+        roster = {cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1} for cid in ("yangyang-xuanling", "suisui", "chisa", "hiyuki", "lucilla", "shorekeeper")}
+        roster["chisa"]["max_uses"] = 2
+        teams = [{member["id"] for member in team["members"]} for team in server.recommend({"roster": roster, "team_count": 2})["teams"]]
+        self.assertIn({"yangyang-xuanling", "suisui", "chisa"}, teams)
+        self.assertIn({"hiyuki", "lucilla", "chisa"}, teams)
+
+    def test_two_suisui_uses_complete_xuanling_and_hiyuki_while_chisa_flexes(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in (
+                "yangyang-xuanling", "suisui", "chisa",
+                "hiyuki", "lucilla",
+                "aemeath", "denia", "mornye",
+            )
+        }
+        roster["suisui"]["max_uses"] = 2
+        roster["chisa"]["max_uses"] = 2
+        teams = [
+            {member["id"] for member in team["members"]}
+            for team in server.recommend({"roster": roster, "team_count": 3})["teams"]
+        ]
+        self.assertIn({"yangyang-xuanling", "suisui", "chisa"}, teams)
+        self.assertIn({"hiyuki", "lucilla", "suisui"}, teams)
+        self.assertIn({"aemeath", "denia", "chisa"}, teams)
+
+    def test_hiyuki_uses_suisui_so_chisa_can_complete_aemeath_core(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in ("hiyuki", "lucilla", "suisui", "aemeath", "denia", "chisa")
+        }
+        teams = [
+            {member["id"] for member in team["members"]}
+            for team in server.recommend({"roster": roster, "team_count": 2})["teams"]
+        ]
+        self.assertIn({"hiyuki", "lucilla", "suisui"}, teams)
+        self.assertIn({"aemeath", "denia", "chisa"}, teams)
+
+    def test_saved_roster_boundary_prefers_xuanling_and_suisui_in_primary_allocation(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in (
+                "yangyang-xuanling", "suisui", "chisa",
+                "hiyuki", "lucilla", "aemeath", "denia",
+                "phrolova", "cantarella", "qiuyuan",
+            )
+        }
+        roster["suisui"]["max_uses"] = 2
+        roster["chisa"]["max_uses"] = 2
+        roster["aemeath"].update({"sequence": 3, "signature_weapon": True})
+        roster["hiyuki"].update({"sequence": 2, "signature_weapon": True})
+        teams = [
+            {member["id"] for member in team["members"]}
+            for team in server.recommend({"roster": roster, "team_count": 3})["teams"]
+        ]
+        self.assertIn({"yangyang-xuanling", "suisui", "chisa"}, teams)
+        self.assertIn({"hiyuki", "lucilla", "suisui"}, teams)
+        self.assertIn({"aemeath", "denia", "chisa"}, teams)
 
     def test_recommendation_uses_owned_characters(self):
         roster = {
@@ -285,6 +423,90 @@ class ResonanceLabTests(unittest.TestCase):
         result = server.recommend({"roster": roster, "team_count": 1})
         self.assertEqual(result["teams"][0]["confidence"], "높음")
         self.assertIn("갈브레나·유노", result["teams"][0]["reason"])
+
+    def test_galbrena_uses_iuno_when_qiuyuan_is_spent_by_phrolova(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in ("phrolova", "cantarella", "qiuyuan", "galbrena", "iuno", "mortefi", "verina")
+        }
+        roster["iuno"].update({"build_status": "미육성", "signature_weapon": True})
+        roster["mortefi"].update({"level": 1, "build_status": "미육성"})
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+        self.assertIn({"phrolova", "cantarella", "qiuyuan"}, teams)
+        self.assertIn({"galbrena", "iuno", "verina"}, teams)
+        self.assertNotIn({"galbrena", "mortefi", "verina"}, teams)
+
+    def test_latest_galbrena_gets_shorekeeper_over_older_camellya_fallback(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in (
+                "phrolova", "cantarella", "qiuyuan",
+                "galbrena", "iuno", "shorekeeper",
+                "camellya", "sanhua", "baizhi",
+            )
+        }
+        roster["iuno"].update({"build_status": "미육성", "signature_weapon": True})
+        roster["baizhi"]["build_status"] = "실전 가능"
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+        self.assertIn({"phrolova", "cantarella", "qiuyuan"}, teams)
+        self.assertIn({"galbrena", "iuno", "shorekeeper"}, teams)
+        self.assertIn({"camellya", "sanhua", "baizhi"}, teams)
+        self.assertNotIn({"camellya", "sanhua", "shorekeeper"}, teams)
+
+    def test_denia_roster_does_not_spend_shorekeeper_on_unbuilt_chixia_changli(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in (
+                "aemeath", "denia", "chisa",
+                "hiyuki", "lucilla",
+                "phrolova", "cantarella", "qiuyuan",
+                "galbrena", "iuno", "shorekeeper",
+                "camellya", "sanhua", "baizhi",
+                "changli", "chixia", "lumi",
+            )
+        }
+        roster["chisa"]["max_uses"] = 2
+        roster["shorekeeper"]["max_uses"] = 2
+        roster["iuno"].update({"build_status": "미육성", "signature_weapon": True})
+        roster["changli"]["build_status"] = "실전 가능"
+        roster["chixia"].update({"level": 1, "build_status": "미육성"})
+        roster["lumi"].update({"level": 1, "build_status": "미육성"})
+        roster["baizhi"]["build_status"] = "실전 가능"
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+        self.assertIn({"aemeath", "denia", "chisa"}, teams)
+        self.assertIn({"hiyuki", "lucilla", "chisa"}, teams)
+        self.assertIn({"phrolova", "cantarella", "qiuyuan"}, teams)
+        self.assertIn({"galbrena", "iuno", "shorekeeper"}, teams)
+        self.assertNotIn({"changli", "chixia", "shorekeeper"}, teams)
+
+    def test_unbuilt_iuno_is_used_as_galbrena_amplifier_before_onfield_carry(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in ("galbrena", "iuno", "shorekeeper", "lynae", "mornye")
+        }
+        roster["iuno"].update({"build_status": "미육성", "signature_weapon": True})
+        result = server.recommend({"roster": roster, "team_count": 1})
+        self.assertEqual(
+            {member["id"] for member in result["teams"][0]["members"]},
+            {"galbrena", "iuno", "shorekeeper"},
+        )
+
+    def test_galbrena_iuno_falls_back_to_baizhi_before_unbuilt_mortefi(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in ("phrolova", "cantarella", "qiuyuan", "galbrena", "iuno", "mortefi", "baizhi")
+        }
+        roster["iuno"].update({"build_status": "미육성", "signature_weapon": True})
+        roster["mortefi"].update({"level": 1, "build_status": "미육성"})
+        roster["baizhi"]["build_status"] = "실전 가능"
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+        self.assertIn({"phrolova", "cantarella", "qiuyuan"}, teams)
+        self.assertIn({"galbrena", "iuno", "baizhi"}, teams)
+        self.assertNotIn({"galbrena", "mortefi", "baizhi"}, teams)
 
     def test_global_allocation_expands_carlotta_and_jinhsi_cores(self):
         roster = {

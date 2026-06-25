@@ -51,5 +51,7 @@
   {"id":"roccia","name":"Roccia","name_ko":"로코코","element_ko":"인멸","weapon_ko":"권갑","role":"서브딜러","rarity":5,"image":"https://wuthering.gg/images/iconrolehead150/T_IconRoleHead150_33_UI.png","synergy":[]},
   {"id":"cantarella","name":"Cantarella","name_ko":"칸타렐라","element_ko":"인멸","weapon_ko":"증폭기","role":"서포터","rarity":5,"image":"https://wuthering.gg/images/iconrolehead150/T_IconRoleHead150_34_UI.png","synergy":[]},
   {"id":"phrolova","name":"Phrolova","name_ko":"플로로","element_ko":"인멸","weapon_ko":"증폭기","role":"딜러","rarity":5,"image":"https://wuthering.gg/images/iconrolehead150/T_IconRoleHead150_41_UI.png","synergy":["cantarella","roccia"]},
-  {"id":"chisa","name":"Chisa","name_ko":"치사","element_ko":"인멸","weapon_ko":"대검","role":"서포터","rarity":5,"image":"https://wuthering.gg/images/iconrolehead150/T_IconRoleHead150_57_UI.png","synergy":["hiyuki","lucilla","aemeath","cartethyia"]}
+  {"id":"chisa","name":"Chisa","name_ko":"치사","element_ko":"인멸","weapon_ko":"대검","role":"서포터","rarity":5,"image":"https://wuthering.gg/images/iconrolehead150/T_IconRoleHead150_57_UI.png","synergy":["hiyuki","lucilla","aemeath","cartethyia","yangyang-xuanling"]},
+  {"id":"yangyang-xuanling","name":"Yangyang: Xuanling","name_ko":"양양: 현령","element_ko":"인멸","weapon_ko":"직검","role":"딜러","rarity":5,"image":"https://static.allthings.how/wp-content/uploads/2026/06/image-9886945706.jpg","synergy":["suisui","chisa"],"preview":true,"release_patch":"3.5"},
+  {"id":"suisui","name":"Suisui","name_ko":"수수","element_ko":"응결","weapon_ko":"증폭기","role":"서포터","rarity":5,"image":"https://static.allthings.how/wp-content/uploads/2026/06/image-2839232348.jpg","synergy":["yangyang-xuanling","chisa","hiyuki","lucilla"],"preview":true,"release_patch":"3.5"}
 ]

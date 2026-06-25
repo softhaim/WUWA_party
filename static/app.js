@@ -1,10 +1,14 @@
 const state = { characters: [], roster: {}, filterElement: "", activeId: null };
 const COLORS = {응결:"#173849",용융:"#4c2520",전도:"#312548",기류:"#193d36",회절:"#4a4120",인멸:"#3d2545"};
 const $ = (selector) => document.querySelector(selector);
+const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:8000" : "";
+const imageUrl = (value) => value?.startsWith("/") ? `${API_BASE}${value}` : value;
 
 async function api(path, options={}) {
-  const response = await fetch(path, {headers:{"Content-Type":"application/json"}, ...options});
-  if (!response.ok) throw new Error(`API 오류: ${response.status}`);
+  let response;
+  try { response = await fetch(`${API_BASE}${path}`, {headers:{"Content-Type":"application/json"}, ...options}); }
+  catch (_) { throw new Error("로컬 서버에 연결할 수 없습니다. python3 server.py 실행 상태를 확인해 주세요."); }
+  if (!response.ok) throw new Error(`로컬 API 오류: ${response.status}`);
   return response.json();
 }
 
@@ -34,7 +38,7 @@ function renderGrid(){
   $("#characterGrid").innerHTML=chars.map(c=>{
     const r=rosterOf(c.id);
     return `<button class="character-card ${r.owned?"owned":""}" data-id="${c.id}" style="--char-color:${COLORS[c.element_ko]}">
-      <div class="portrait"><img src="${c.image}" alt="${escapeHtml(c.name_ko)}" loading="lazy" referrerpolicy="no-referrer">${r.owned?'<span class="owned-badge">OWNED</span>':''}</div>
+      <div class="portrait"><img src="${c.image}" alt="${escapeHtml(c.name_ko)}" loading="lazy" referrerpolicy="no-referrer">${c.preview?`<span style="position:absolute;top:9px;left:9px;background:#15191ee8;border:1px solid #d787e9;color:#f0b7ff;padding:4px 7px;font-size:10px;font-weight:900">PREVIEW ${escapeHtml(c.release_patch||"")}</span>`:""}${r.owned?'<span class="owned-badge">OWNED</span>':''}</div>
       <div class="card-main"><strong>${escapeHtml(c.name_ko)}</strong><div class="meta"><span>${c.element_ko} · ${c.weapon_ko}</span><span>${r.owned&&r.signature_weapon?`전무 R${r.weapon_rank}`:`${c.rarity}★`}</span></div></div>
       <div class="card-foot"><span><i class="dot"></i>${r.owned?`S${r.sequence} · Lv.${r.level}`:"미보유"}</span><span>${r.owned?r.build_status:c.role}</span></div>
     </button>`;
@@ -51,7 +55,7 @@ function updateStats(){
 
 function openCharacter(id){
   const c=state.characters.find(x=>x.id===id), r=rosterOf(id); state.activeId=id;
-  $("#dialogImage").src=c.image; $("#dialogImage").alt=c.name_ko; $("#dialogElement").textContent=`${c.element_ko.toUpperCase()} · ${c.role}`;
+  $("#dialogImage").src=c.image; $("#dialogImage").alt=c.name_ko; $("#dialogElement").textContent=`${c.element_ko.toUpperCase()} · ${c.role}${c.preview?` · ${c.release_patch} 프리뷰`:""}`;
   $("#dialogName").textContent=c.name_ko; $("#dialogMeta").textContent=`${c.weapon_ko} · ${c.rarity}성 · ${c.name}`;
   $("#dialogOwned").checked=Boolean(r.owned); $("#dialogSequence").value=r.sequence; $("#dialogLevel").value=r.level;
   $("#dialogBuild").value=r.build_status; $("#dialogUses").value=r.max_uses ?? 1;
@@ -72,9 +76,10 @@ async function recommend(){
   try{
     const result=await api("/api/recommend",{method:"POST",body:JSON.stringify({team_count:$("#teamCount").value,roster:state.roster})});
     $("#recommendMessage").textContent=result.message;
-    const teamCard=t=>`<article class="team-card"><div class="team-head"><h3>TEAM ${String(t.id).padStart(2,"0")} <small>${escapeHtml(t.confidence)} 신뢰도 · 육성 ${t.readiness}%</small></h3><span class="score">${t.score}</span></div><div class="team-members">${t.members.map(m=>`<div class="member"><img src="${m.image}" alt="${escapeHtml(m.name_ko)}" referrerpolicy="no-referrer"><div><strong>${escapeHtml(m.name_ko)}</strong><small>${escapeHtml(m.slot||m.role)}</small></div></div>`).join("")}</div><div class="team-tags">${(t.tags||[]).map(tag=>`<span>${escapeHtml(tag)}</span>`).join("")}</div><p class="team-reason">${escapeHtml(t.reason)}</p></article>`;
+    const teamCard=t=>`<article class="team-card"><div class="team-head"><h3>TEAM ${String(t.id).padStart(2,"0")} <small>${escapeHtml(t.confidence)} 신뢰도 · 육성 ${t.readiness}%</small></h3><span class="score">${t.score}</span></div><div class="team-members">${t.members.map(m=>`<div class="member"><img src="${imageUrl(m.image)}" alt="${escapeHtml(m.name_ko)}" referrerpolicy="no-referrer"><div><strong>${escapeHtml(m.name_ko)}</strong><small>${escapeHtml(m.slot||m.role)}</small></div></div>`).join("")}</div><div class="team-tags">${(t.tags||[]).map(tag=>`<span>${escapeHtml(tag)}</span>`).join("")}</div><p class="team-reason">${escapeHtml(t.reason)}</p>${t.score_details?`<p class="team-reason">조합 ${t.score_details.composition} · 최신성 ${t.score_details.meta} · 돌파/무기 ${t.score_details.investment} · 육성 ${t.score_details.build}</p>`:""}</article>`;
     $("#teamResults").innerHTML=result.configurations?.length?result.configurations.map((config,index)=>`<section class="configuration"><div class="configuration-head"><div><span>ALTERNATIVE ${String(index+1).padStart(2,"0")}</span><h2>${escapeHtml(config.label)}</h2></div><p>${config.team_count}개 파티 · 조합 지수 ${config.total_score} · 전투 점수 ${config.combat_score}</p></div><div class="configuration-teams">${config.teams.map(teamCard).join("")}</div></section>`).join(""):`<div class="empty">${escapeHtml(result.message)}</div>`;
-  }finally{button.disabled=false;button.textContent="✦ 자동 파티 구성";}
+  }catch(error){$("#recommendMessage").textContent=error.message;$("#teamResults").innerHTML=`<div class="empty">${escapeHtml(error.message)}</div>`;toast(error.message);}
+  finally{button.disabled=false;button.textContent="✦ 자동 파티 구성";}
 }
 
 function toast(message){const el=$("#toast");el.textContent=message;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),1800);}
@@ -82,7 +87,7 @@ function showView(view){const roster=view==="roster";$("#rosterView").hidden=!ro
 
 async function init(){
   for(let i=0;i<=6;i++) $("#dialogSequence").insertAdjacentHTML("beforeend",`<option value="${i}">S${i}</option>`);
-  const [characters,roster,storage]=await Promise.all([api("/api/characters"),api("/api/roster"),api("/api/storage")]); state.characters=characters; state.roster=roster;setSaveState("saved",savedLabel(storage.last_saved));
+  const [characters,roster,storage]=await Promise.all([api("/api/characters"),api("/api/roster"),api("/api/storage")]); state.characters=characters.map(c=>({...c,image:imageUrl(c.image)})); state.roster=roster;setSaveState("saved",savedLabel(storage.last_saved));
   renderTabs();renderGrid();
   ["#searchInput","#elementFilter","#weaponFilter","#ownedOnly"].forEach(s=>$(s).addEventListener("input",renderGrid));
   $("#elementTabs").addEventListener("click",e=>{if(!e.target.dataset.element)return;state.filterElement=e.target.dataset.element==="전체"?"":e.target.dataset.element;$("#elementFilter").value=state.filterElement;renderTabs();renderGrid();});
@@ -93,4 +98,4 @@ async function init(){
   document.querySelectorAll(".nav-link").forEach(x=>x.addEventListener("click",()=>showView(x.dataset.view)));
 }
 
-init().catch(error=>{$("#characterGrid").innerHTML=`<div class="empty">앱을 불러오지 못했습니다: ${escapeHtml(error.message)}</div>`;console.error(error);});
+init().catch(error=>{setSaveState("error","로컬 서버 연결 필요");$("#characterGrid").innerHTML=`<div class="empty">앱을 불러오지 못했습니다: ${escapeHtml(error.message)}<br><br>터미널에서 <b>python3 server.py</b>를 실행해 주세요.</div>`;console.error(error);});

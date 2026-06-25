@@ -1,7 +1,12 @@
 {
-  "version": "2026.06.12",
-  "meta_patch": "3.4",
-  "meta_updated_at": "2026-06-19",
+  "version": "2026.06.14",
+  "meta_patch": "3.4 + 3.5 프리뷰",
+  "meta_updated_at": "2026-06-22",
+  "preview_notice": "3.5 캐릭터와 조합은 출시 전 베타 정보이며 정식 출시 시 수치와 판정이 변경될 수 있습니다.",
+  "preview_high_end_cores": [
+    ["yangyang-xuanling","suisui","chisa"],
+    ["hiyuki","lucilla","suisui"]
+  ],
   "high_end_cores": [
     ["hiyuki","lucilla","chisa"],
     ["aemeath","denia","chisa"],
@@ -16,6 +21,9 @@
     ["carlotta","zhezhi","shorekeeper"]
   ],
   "templates": [
+    {"id":"xuanling_suisui_chisa_preview","members":["yangyang-xuanling","suisui","chisa"],"positions":{"yangyang-xuanling":"carry","suisui":"amplifier","chisa":"support"},"score":100,"tier":"bis","status":"preview","patch":"3.5-beta","label":"양양: 현령·수수·치사 프리뷰 최고점","tags":["인멸","이상 효과","피해 증가"],"source":"https://www.reddit.com/r/WutheringWavesLeaks/comments/1u4muhw/35_yangyang_sp_recommended_team_xuanling_yangyang/"},
+    {"id":"xuanling_chisa_shorekeeper_preview","members":["yangyang-xuanling","chisa","shorekeeper"],"positions":{"yangyang-xuanling":"carry","chisa":"amplifier","shorekeeper":"support"},"score":94,"tier":"alternative","status":"preview","patch":"3.5-beta","label":"수수 미보유 양양: 현령 대체 조합","tags":["인멸","이상 효과","치명타"]},
+    {"id":"hiyuki_lucilla_suisui_preview","members":["hiyuki","lucilla","suisui"],"positions":{"hiyuki":"carry","lucilla":"amplifier","suisui":"support"},"score":100,"tier":"bis","status":"preview","patch":"3.5-beta","label":"히유키·루실라·수수 치사 동급 최고점","tags":["공명 해방","응결 침식","피해 증가"],"source":"https://www.gamsgo.com/blog/wuthering-waves-hiyuki-build"},
     {"id":"hiyuki_bis","members":["hiyuki","lucilla","chisa"],"score":100,"label":"히유키 응결 침식 최고점","tags":["공명 해방","응결 침식","이상 효과"]},
     {"id":"hiyuki_lynae","members":["hiyuki","lucilla","lynae"],"score":93,"label":"히유키 공명 해방 대체 조합","tags":["공명 해방","응결 침식"]},
     {"id":"hiyuki_lucilla_shorekeeper","members":["hiyuki","lucilla","shorekeeper"],"score":96,"tier":"high","label":"치사 부재 시 히유키·루실라·파수인 고점","tags":["공명 해방","응결 침식","치명타"]},
@@ -46,7 +54,9 @@
     ,{"id":"carlotta_sanhua_baizhi","members":["carlotta","sanhua","baizhi"],"score":84,"label":"카를로타·산화·설지 절지 부재 대체 조합","tags":["응결","피해 증가"]}
     ,{"id":"galbrena_lupa","members":["galbrena","lupa","mornye"],"score":92,"label":"갈브레나 용융 에코 조합","tags":["에코 스킬","용융"]}
     ,{"id":"galbrena_qiuyuan_shorekeeper","members":["galbrena","qiuyuan","shorekeeper"],"score":96,"tier":"bis","label":"갈브레나·구원·파수인 최고점","tags":["에코 스킬","강공","치명타 피해","용융"]}
-    ,{"id":"galbrena_iuno_shorekeeper","members":["galbrena","iuno","shorekeeper"],"positions":{"galbrena":"carry","iuno":"amplifier","shorekeeper":"support"},"score":92,"tier":"alternative","label":"갈브레나·유노·파수인 강공 조합","tags":["강공","에코 스킬","용융"]}
+    ,{"id":"galbrena_iuno_shorekeeper","members":["galbrena","iuno","shorekeeper"],"positions":{"galbrena":"carry","iuno":"amplifier","shorekeeper":"support"},"score":95,"tier":"high","label":"구원 사용 시 갈브레나·유노 파수인 고점 대체 조합","tags":["강공","에코 스킬","치명타","용융"]}
+    ,{"id":"galbrena_iuno_verina","members":["galbrena","iuno","verina"],"positions":{"galbrena":"carry","iuno":"amplifier","verina":"support"},"score":90,"tier":"alternative","label":"구원 사용 시 갈브레나·유노 벨리나 대체 조합","tags":["강공","에코 스킬","피해 증가","용융"]}
+    ,{"id":"galbrena_iuno_baizhi","members":["galbrena","iuno","baizhi"],"positions":{"galbrena":"carry","iuno":"amplifier","baizhi":"support"},"score":84,"tier":"expansion","label":"구원·상위 서포터 부재 시 갈브레나·유노 설지 확장 조합","tags":["강공","에코 스킬","피해 증가","용융"]}
     ,{"id":"lucy_rebecca_mornye","members":["lucy","rebecca","mornye"],"score":99,"label":"루시·레베카 Hack 최고점","tags":["Hack","강공","조화도 파괴"]}
     ,{"id":"lucy_rebecca_shorekeeper","members":["lucy","rebecca","shorekeeper"],"score":95,"label":"루시·레베카 파수인 대체 조합","tags":["Hack","강공","피해 증가"]}
     ,{"id":"lucy_rebecca_verina","members":["lucy","rebecca","verina"],"score":94,"label":"루시·레베카 벨리나 대체 조합","tags":["Hack","강공","피해 증가"]}
@@ -72,6 +82,8 @@
     ,{"id":"changli_taoqi","members":["changli","taoqi","shorekeeper"],"score":81,"tier":"alternative","label":"장리·도기 공명 스킬 대체 조합","tags":["공명 스킬","용융"]}
   ],
   "profiles": {
+    "yangyang-xuanling":{"position":"carry","meta_value":10,"damage":["인멸","이상 효과","피해 증가"],"archetypes":["인멸","이상 효과"]},
+    "suisui":{"position":"support","provides":["인멸","이상 효과","피해 증가","응결 침식"],"archetypes":["이상 효과","응결 침식"],"support_value":10,"sustain":true},
     "hiyuki":{"position":"carry","meta_value":10,"damage":["공명 해방","응결 침식"],"archetypes":["응결 침식","이상 효과"]},
     "lucilla":{"position":"amplifier","provides":["공명 해방","응결 침식","에코 스킬"],"archetypes":["응결 침식","이상 효과"]},
     "chisa":{"position":"support","provides":["이상 효과","피해 증가"],"archetypes":["이상 효과","응결 침식"],"support_value":9,"sustain":true},
