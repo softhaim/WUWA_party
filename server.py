@@ -19,6 +19,15 @@ STATIC = ROOT / "static"
 DATA = ROOT / "data"
 DB_PATH = ROOT / "roster.db"
 CACHE = ROOT / ".cache" / "characters"
+SHARED_USAGE_GROUPS = {
+    "rover-aero": "rover",
+    "rover-havoc": "rover",
+    "rover-spectro": "rover",
+}
+
+
+def usage_key(character_id: str) -> str:
+    return SHARED_USAGE_GROUPS.get(character_id, character_id)
 
 
 def load_characters() -> list[dict[str, Any]]:
@@ -203,6 +212,9 @@ def weighted_member_average(
 
 def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) -> dict[str, Any] | None:
     member_ids = {member["id"] for member in members}
+    usage_keys = [member.get("usage_key", member["id"]) for member in members]
+    if len(set(usage_keys)) != len(usage_keys):
+        return None
     template = next((item for item in rules["templates"] if set(item["members"]) == member_ids), None)
     profiles = {member["id"]: profile_for(member, rules) for member in members}
     carries = [member for member in members if profiles[member["id"]].get("position") == "carry"]
@@ -442,8 +454,9 @@ def optimize_teams(candidates: list[dict[str, Any]], team_count: int, alternativ
                 next_counts = dict(counts)
                 allowed = True
                 for member in candidate["members"]:
-                    next_counts[member["id"]] = next_counts.get(member["id"], 0) + 1
-                    if next_counts[member["id"]] > int(member["state"].get("max_uses", 1)):
+                    key = member.get("usage_key", member["id"])
+                    next_counts[key] = next_counts.get(key, 0) + 1
+                    if next_counts[key] > int(member.get("_usage_limit", member["state"].get("max_uses", 1))):
                         allowed = False
                         break
                 if allowed:
@@ -482,8 +495,12 @@ def complete_roster_allocation(
     selected: list[dict[str, Any]] = []
     counts: dict[str, int] = {}
     selected_keys: set[str] = set()
-    limits = {member["id"]: int(member["state"].get("max_uses", 1)) for member in available}
-    positions = {member["id"]: member.get("_position") for member in available}
+    limits: dict[str, int] = {}
+    positions: dict[str, set[str]] = {}
+    for member in available:
+        key = member.get("usage_key", member["id"])
+        limits[key] = max(limits.get(key, 0), int(member.get("_usage_limit", member["state"].get("max_uses", 1))))
+        positions.setdefault(key, set()).add(member.get("_position"))
 
     for depth in range(team_count):
         viable: list[dict[str, Any]] = []
@@ -494,15 +511,20 @@ def complete_roster_allocation(
             if candidate["key"] in selected_keys:
                 continue
             next_counts = dict(counts)
-            if any(next_counts.get(member["id"], 0) + 1 > limits[member["id"]] for member in candidate["members"]):
-                continue
+            allowed = True
             for member in candidate["members"]:
-                next_counts[member["id"]] = next_counts.get(member["id"], 0) + 1
+                key = member.get("usage_key", member["id"])
+                next_counts[key] = next_counts.get(key, 0) + 1
+                if next_counts[key] > limits[key]:
+                    allowed = False
+                    break
+            if not allowed:
+                continue
             remaining_total = sum(limits[cid] - next_counts.get(cid, 0) for cid in limits)
             remaining_carries = sum(
                 limits[cid] - next_counts.get(cid, 0)
                 for cid in limits
-                if positions[cid] == "carry"
+                if "carry" in positions[cid]
             )
             if remaining_total >= teams_left * 3 and remaining_carries >= teams_left:
                 viable.append(candidate)
@@ -512,7 +534,8 @@ def complete_roster_allocation(
         selected.append(chosen)
         selected_keys.add(chosen["key"])
         for member in chosen["members"]:
-            counts[member["id"]] = counts.get(member["id"], 0) + 1
+            key = member.get("usage_key", member["id"])
+            counts[key] = counts.get(key, 0) + 1
     return selected
 
 
@@ -586,6 +609,7 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
         char = dict(chars[cid])
         char["state"] = state
         char["_position"] = profile_for(char, rules).get("position")
+        char["usage_key"] = usage_key(cid)
         char["power"] = BUILD_POINTS.get(state.get("build_status"), 0) + int(state.get("level", 1)) / 10
         char["power"] += int(state.get("sequence", 0)) * 0.7
         char["power"] += (4 if state.get("signature_weapon") else 0) + int(state.get("weapon_rank", 1)) * 0.6
@@ -594,7 +618,14 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
     if len(available) < 3:
         return {"teams": [], "configurations": [], "message": "보유 캐릭터를 최소 3명 선택해 주세요."}
 
-    maximum_count = max(1, sum(int(member["state"].get("max_uses", 1)) for member in available) // 3)
+    usage_limits: dict[str, int] = {}
+    for member in available:
+        key = member.get("usage_key", member["id"])
+        usage_limits[key] = max(usage_limits.get(key, 0), int(member["state"].get("max_uses", 1)))
+    for member in available:
+        member["_usage_limit"] = usage_limits[member.get("usage_key", member["id"])]
+
+    maximum_count = max(1, sum(usage_limits.values()) // 3)
     team_count = maximum_count if str(requested_count) == "all" else max(1, min(maximum_count, int(requested_count)))
 
     candidates = [evaluated for group in combinations(available, 3) if (evaluated := evaluate_team(group, rules))]

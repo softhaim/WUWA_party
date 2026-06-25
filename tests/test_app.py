@@ -384,6 +384,63 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertEqual(result["maximum_team_count"], 5)
         self.assertGreaterEqual(len(result["teams"]), 5)
 
+    def test_rover_forms_share_one_usage_slot_by_default(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in (
+                "cartethyia", "ciaccona", "rover-aero",
+                "zani", "rover-spectro", "shorekeeper",
+                "rover-havoc", "roccia", "verina",
+            )
+        }
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        rover_ids = {
+            member["id"]
+            for team in result["teams"]
+            for member in team["members"]
+            if member["id"].startswith("rover-")
+        }
+        self.assertLessEqual(len(rover_ids), 1)
+        self.assertGreaterEqual(len(rover_ids), 1)
+
+    def test_rover_forms_cannot_share_the_same_team(self):
+        chars = {c["id"]: c for c in server.load_characters()}
+        rules = server.load_team_rules()
+        members = []
+        for cid in ("rover-havoc", "yangyang", "rover-aero"):
+            member = dict(chars[cid])
+            member["state"] = {"build_status": "완성", "level": 90, "max_uses": 2}
+            member["power"] = 34.6
+            member["usage_key"] = server.usage_key(cid)
+            members.append(member)
+        self.assertIsNone(server.evaluate_team(tuple(members), rules))
+
+    def test_rover_shared_usage_can_be_raised_for_multi_use_modes(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in (
+                "cartethyia", "ciaccona", "rover-aero",
+                "zani", "rover-spectro", "shorekeeper",
+                "rover-havoc", "roccia", "verina",
+            )
+        }
+        for cid in ("rover-aero", "rover-spectro", "rover-havoc"):
+            roster[cid]["max_uses"] = 2
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        rover_uses = sum(
+            1
+            for team in result["teams"]
+            for member in team["members"]
+            if member["id"].startswith("rover-")
+        )
+        self.assertLessEqual(rover_uses, 2)
+        self.assertGreaterEqual(rover_uses, 2)
+        for team in result["teams"]:
+            self.assertLessEqual(
+                sum(1 for member in team["members"] if member["id"].startswith("rover-")),
+                1,
+            )
+
     def test_lucy_rebecca_mornye_is_current_meta_core(self):
         roster = {
             cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
