@@ -11,24 +11,54 @@ class ResonanceLabTests(unittest.TestCase):
     def test_static_bundle_supports_direct_file_open(self):
         index = (server.STATIC / "index.html").read_text(encoding="utf-8")
         app = (server.STATIC / "app.js").read_text(encoding="utf-8")
-        self.assertIn('href="./styles.css"', index)
+        self.assertIn('href="./styles.css?', index)
         self.assertIn('src="./app.js?', index)
         self.assertIn('location.protocol === "file:"', app)
         self.assertIn("http://127.0.0.1:8000", app)
         self.assertIn("imageUrl(m.image)", app)
+        self.assertIn("dialogLiveToggle", index)
+        self.assertIn("toggleLive2d", app)
 
     def test_catalog_is_valid_and_unique(self):
         characters = server.load_characters()
-        self.assertEqual(len(characters), 55)
-        self.assertEqual(len({c["id"] for c in characters}), 55)
+        self.assertEqual(len(characters), 56)
+        self.assertEqual(len({c["id"] for c in characters}), 56)
         self.assertTrue(all(c["image"].startswith("/api/image/") for c in characters))
-        self.assertTrue(all(c["image_source"].startswith("https://") for c in characters))
+        self.assertTrue(all(c["image_source"].startswith(("https://", "static/")) for c in characters))
 
     def test_xuanling_is_distinct_from_base_yangyang(self):
         characters = {character["id"]: character for character in server.load_characters()}
         self.assertEqual(characters["yangyang"]["element_ko"], "기류")
         self.assertEqual(characters["yangyang-xuanling"]["element_ko"], "인멸")
-        self.assertTrue(characters["yangyang-xuanling"]["preview"])
+        self.assertFalse(characters["yangyang-xuanling"].get("preview", False))
+        self.assertEqual(characters["yangyang-xuanling"]["image_source"], "static/characters/nanoka/head/yangyang-xuanling.webp")
+        self.assertEqual(characters["suisui"]["image_source"], "static/characters/nanoka/head/suisui.webp")
+        self.assertEqual(characters["yangyang-xuanling"]["detail_image_source"], "static/characters/nanoka/pile/yangyang-xuanling.webp")
+        self.assertEqual(characters["suisui"]["detail_image_source"], "static/characters/nanoka/pile/suisui.webp")
+        self.assertTrue(characters["yangyang-xuanling"]["element_icon"].startswith("/icons/elements/"))
+        self.assertTrue(characters["suisui"]["weapon_icon"].startswith("/icons/weapons/"))
+        self.assertIn("Portraits_Xuanling", characters["yangyang-xuanling"]["live2d_skeleton_url"])
+        self.assertIn("Portraits_Suisui", characters["suisui"]["live2d_skeleton_url"])
+        self.assertIn("T_IconRole_Pile_Xuanling_UI.webp", characters["yangyang-xuanling"]["nanoka_source"])
+        self.assertIn("T_IconRole_Pile_Suisui_UI.webp", characters["suisui"]["nanoka_source"])
+        self.assertEqual(server.character_image("yangyang-xuanling")[1], "image/webp")
+        self.assertEqual(server.character_image("suisui")[1], "image/webp")
+        self.assertEqual(server.character_image("yangyang-xuanling", "detail_image_source")[1], "image/webp")
+
+    def test_catalog_is_sorted_by_element_then_korean_name(self):
+        characters = server.load_characters()
+        order = {element: index for index, element in enumerate(("응결", "용융", "전도", "기류", "회절", "인멸"))}
+        actual = [(order[c["element_ko"]], c["name_ko"], c["id"]) for c in characters]
+        self.assertEqual(actual, sorted(actual))
+        names_by_element = {}
+        for character in characters:
+            names_by_element.setdefault(character["element_ko"], []).append(character["name_ko"])
+        self.assertIn("방랑자 · 전도", names_by_element["전도"])
+        self.assertLess(names_by_element["전도"].index("루미"), names_by_element["전도"].index("방랑자 · 전도"))
+        self.assertIn("수수", names_by_element["응결"])
+        self.assertLess(names_by_element["응결"].index("수수"), names_by_element["응결"].index("유호"))
+        self.assertIn("양양: 현령", names_by_element["인멸"])
+        self.assertLess(names_by_element["인멸"].index("양양: 현령"), names_by_element["인멸"].index("카멜리아"))
 
     def test_dynamic_score_rewards_complete_latest_bis(self):
         ids = ("hiyuki", "lucilla", "chisa")
@@ -75,18 +105,18 @@ class ResonanceLabTests(unittest.TestCase):
         latest_score = server.recommend({"roster": latest_roster, "team_count": 1})["teams"][0]["score"]
         self.assertGreater(old_score, latest_score)
 
-    def test_xuanling_suisui_chisa_preview_core_is_recommended(self):
+    def test_xuanling_suisui_chisa_current_core_is_recommended(self):
         roster = {cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1} for cid in ("yangyang-xuanling", "suisui", "chisa")}
         team = server.recommend({"roster": roster, "team_count": 1})["teams"][0]
         self.assertEqual({member["id"] for member in team["members"]}, set(roster))
-        self.assertEqual(team["confidence"], "프리뷰")
-        self.assertIn("출시 전", team["reason"])
+        self.assertEqual(team["confidence"], "높음")
+        self.assertIn("메타 조합", team["reason"])
 
-    def test_suisui_unlocks_hiyuki_lucilla_preview_team(self):
+    def test_suisui_unlocks_hiyuki_lucilla_current_team(self):
         roster = {cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1} for cid in ("hiyuki", "lucilla", "suisui")}
         team = server.recommend({"roster": roster, "team_count": 1})["teams"][0]
         self.assertEqual({member["id"] for member in team["members"]}, set(roster))
-        self.assertEqual(team["confidence"], "프리뷰")
+        self.assertEqual(team["confidence"], "높음")
 
     def test_no_suisui_preserves_current_hiyuki_core(self):
         roster = {cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1} for cid in ("hiyuki", "lucilla", "chisa")}
@@ -390,7 +420,7 @@ class ResonanceLabTests(unittest.TestCase):
             for cid in (
                 "cartethyia", "ciaccona", "rover-aero",
                 "zani", "rover-spectro", "shorekeeper",
-                "rover-havoc", "roccia", "verina",
+                "rover-havoc", "rover-electro", "roccia", "verina",
             )
         }
         result = server.recommend({"roster": roster, "team_count": "all"})
@@ -421,10 +451,10 @@ class ResonanceLabTests(unittest.TestCase):
             for cid in (
                 "cartethyia", "ciaccona", "rover-aero",
                 "zani", "rover-spectro", "shorekeeper",
-                "rover-havoc", "roccia", "verina",
+                "rover-havoc", "rover-electro", "roccia", "verina",
             )
         }
-        for cid in ("rover-aero", "rover-spectro", "rover-havoc"):
+        for cid in ("rover-aero", "rover-spectro", "rover-havoc", "rover-electro"):
             roster[cid]["max_uses"] = 2
         result = server.recommend({"roster": roster, "team_count": "all"})
         rover_uses = sum(

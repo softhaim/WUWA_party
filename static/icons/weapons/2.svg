@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="직검">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#eef7c6"/><stop offset="1" stop-color="#d7f35c"/></linearGradient></defs>
+  <circle cx="12" cy="12" r="10.2" fill="#151b20" stroke="#6f7b45" stroke-width="1.2"/>
+  <path d="M12 3 L15 6 L7 18 L4 20 L6 17 Z" fill="none" stroke="url(#g)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

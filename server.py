@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import mimetypes
 import ssl
 import sqlite3
@@ -19,8 +20,17 @@ STATIC = ROOT / "static"
 DATA = ROOT / "data"
 DB_PATH = ROOT / "roster.db"
 CACHE = ROOT / ".cache" / "characters"
+ELEMENT_ORDER = {
+    "응결": 0,
+    "용융": 1,
+    "전도": 2,
+    "기류": 3,
+    "회절": 4,
+    "인멸": 5,
+}
 SHARED_USAGE_GROUPS = {
     "rover-aero": "rover",
+    "rover-electro": "rover",
     "rover-havoc": "rover",
     "rover-spectro": "rover",
 }
@@ -30,23 +40,57 @@ def usage_key(character_id: str) -> str:
     return SHARED_USAGE_GROUPS.get(character_id, character_id)
 
 
+def local_static_url(source: str) -> str:
+    if not source:
+        return ""
+    parsed = urlparse(source)
+    if parsed.scheme in {"http", "https"}:
+        return source
+    normalized = source.lstrip("/")
+    if normalized.startswith("static/"):
+        normalized = normalized.removeprefix("static/")
+    version = hashlib.sha1(source.encode("utf-8")).hexdigest()[:10]
+    return f"/{normalized}?v={version}"
+
+
+def versioned_image_route(route: str, character_id: str, source: str) -> str:
+    version = hashlib.sha1(source.encode("utf-8")).hexdigest()[:10]
+    return f"{route}/{character_id}?v={version}"
+
+
 def load_characters() -> list[dict[str, Any]]:
     characters = json.loads((DATA / "characters.json").read_text(encoding="utf-8"))
+    characters.sort(key=lambda character: (
+        ELEMENT_ORDER.get(character.get("element_ko"), 99),
+        character.get("name_ko", ""),
+        character.get("id", ""),
+    ))
     for character in characters:
         character["image_source"] = character["image"]
-        character["image"] = f"/api/image/{character['id']}"
+        character["detail_image_source"] = character.get("detail_image") or character["image_source"]
+        character["image"] = versioned_image_route("/api/image", character["id"], character["image_source"])
+        character["detail_image"] = versioned_image_route("/api/detail-image", character["id"], character["detail_image_source"])
+        character["element_icon"] = local_static_url(character.get("element_icon", ""))
+        character["weapon_icon"] = local_static_url(character.get("weapon_icon", ""))
     return characters
 
 
-def character_image(character_id: str) -> tuple[bytes, str]:
+def character_image(character_id: str, field: str = "image_source") -> tuple[bytes, str]:
     character = next((c for c in load_characters() if c["id"] == character_id), None)
     if not character:
         raise KeyError(character_id)
+    source = character[field]
+    content_type = mimetypes.guess_type(urlparse(source).path)[0] or "image/png"
+    if urlparse(source).scheme not in {"http", "https"}:
+        local_path = (ROOT / source.lstrip("/")).resolve()
+        if not local_path.is_relative_to(ROOT):
+            raise OSError(f"Image path escapes project root: {source}")
+        return local_path.read_bytes(), content_type
     CACHE.mkdir(parents=True, exist_ok=True)
     cached = CACHE / f"{character_id}.png"
     if not cached.exists():
         request = urllib.request.Request(
-            character["image_source"],
+            source,
             headers={"User-Agent": "ResonanceLab/0.1 (+local roster planner)"},
         )
         # Python.org macOS builds may not be connected to the system CA store.
@@ -55,7 +99,7 @@ def character_image(character_id: str) -> tuple[bytes, str]:
         image_context = ssl._create_unverified_context()
         with urllib.request.urlopen(request, timeout=20, context=image_context) as response:
             cached.write_bytes(response.read())
-    return cached.read_bytes(), "image/png"
+    return cached.read_bytes(), content_type
 
 
 def init_db() -> None:
@@ -333,10 +377,10 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
     allocation_score = score + (3 if template else 0)
     if template:
         allocation_score += tier_bonus.get(effective_tier, 0)
-        # A tiny recency tie-breaker keeps newly released/preview BiS cores from
-        # losing to an older core only because of a few tenths of scarcity math.
+        # A tiny recency tie-breaker keeps newly released BiS cores from losing
+        # to an older core only because of a few tenths of scarcity math.
         # It is intentionally too small to overcome a real composition or build gap.
-        if template.get("status") == "preview" and effective_tier == "bis":
+        if template.get("patch") in {"3.5", "3.5-beta"} and effective_tier == "bis":
             allocation_score += 1.0
     premium_support_value = max(
         (
@@ -739,6 +783,19 @@ class AppHandler(SimpleHTTPRequestHandler):
             character_id = path.removeprefix("/api/image/")
             try:
                 body, content_type = character_image(character_id)
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Cache-Control", "public, max-age=604800")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (KeyError, OSError):
+                self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        if path.startswith("/api/detail-image/"):
+            character_id = path.removeprefix("/api/detail-image/")
+            try:
+                body, content_type = character_image(character_id, "detail_image_source")
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Cache-Control", "public, max-age=604800")

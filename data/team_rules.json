@@ -2,7 +2,7 @@
   "version": "2026.06.14",
   "meta_patch": "3.4 + 3.5 프리뷰",
   "meta_updated_at": "2026-06-22",
-  "preview_notice": "3.5 캐릭터와 조합은 출시 전 베타 정보이며 정식 출시 시 수치와 판정이 변경될 수 있습니다.",
+  "preview_notice": "신규 캐릭터와 조합 정보는 라이브 메타 변화에 따라 업데이트될 수 있습니다.",
   "preview_high_end_cores": [
     ["yangyang-xuanling","suisui","chisa"],
     ["hiyuki","lucilla","suisui"]
@@ -21,9 +21,9 @@
     ["carlotta","zhezhi","shorekeeper"]
   ],
   "templates": [
-    {"id":"xuanling_suisui_chisa_preview","members":["yangyang-xuanling","suisui","chisa"],"positions":{"yangyang-xuanling":"carry","suisui":"amplifier","chisa":"support"},"score":100,"tier":"bis","status":"preview","patch":"3.5-beta","label":"양양: 현령·수수·치사 프리뷰 최고점","tags":["인멸","이상 효과","피해 증가"],"source":"https://www.reddit.com/r/WutheringWavesLeaks/comments/1u4muhw/35_yangyang_sp_recommended_team_xuanling_yangyang/"},
-    {"id":"xuanling_chisa_shorekeeper_preview","members":["yangyang-xuanling","chisa","shorekeeper"],"positions":{"yangyang-xuanling":"carry","chisa":"amplifier","shorekeeper":"support"},"score":94,"tier":"alternative","status":"preview","patch":"3.5-beta","label":"수수 미보유 양양: 현령 대체 조합","tags":["인멸","이상 효과","치명타"]},
-    {"id":"hiyuki_lucilla_suisui_preview","members":["hiyuki","lucilla","suisui"],"positions":{"hiyuki":"carry","lucilla":"amplifier","suisui":"support"},"score":100,"tier":"bis","status":"preview","patch":"3.5-beta","label":"히유키·루실라·수수 치사 동급 최고점","tags":["공명 해방","응결 침식","피해 증가"],"source":"https://www.gamsgo.com/blog/wuthering-waves-hiyuki-build"},
+    {"id":"xuanling_suisui_chisa_preview","members":["yangyang-xuanling","suisui","chisa"],"positions":{"yangyang-xuanling":"carry","suisui":"amplifier","chisa":"support"},"score":100,"tier":"bis","status":"current","patch":"3.5","label":"양양: 현령·수수·치사 최고점","tags":["인멸","이상 효과","피해 증가"],"source":"https://ww.nanoka.cc/character"},
+    {"id":"xuanling_chisa_shorekeeper_preview","members":["yangyang-xuanling","chisa","shorekeeper"],"positions":{"yangyang-xuanling":"carry","chisa":"amplifier","shorekeeper":"support"},"score":94,"tier":"alternative","status":"current","patch":"3.5","label":"수수 미보유 양양: 현령 대체 조합","tags":["인멸","이상 효과","치명타"]},
+    {"id":"hiyuki_lucilla_suisui_preview","members":["hiyuki","lucilla","suisui"],"positions":{"hiyuki":"carry","lucilla":"amplifier","suisui":"support"},"score":100,"tier":"bis","status":"current","patch":"3.5","label":"히유키·루실라·수수 치사 동급 최고점","tags":["공명 해방","응결 침식","피해 증가"],"source":"https://ww.nanoka.cc/character"},
     {"id":"hiyuki_bis","members":["hiyuki","lucilla","chisa"],"score":100,"label":"히유키 응결 침식 최고점","tags":["공명 해방","응결 침식","이상 효과"]},
     {"id":"hiyuki_lynae","members":["hiyuki","lucilla","lynae"],"score":93,"label":"히유키 공명 해방 대체 조합","tags":["공명 해방","응결 침식"]},
     {"id":"hiyuki_lucilla_shorekeeper","members":["hiyuki","lucilla","shorekeeper"],"score":96,"tier":"high","label":"치사 부재 시 히유키·루실라·파수인 고점","tags":["공명 해방","응결 침식","치명타"]},
@@ -75,6 +75,7 @@
     ,{"id":"jinhsi_zhezhi_youhu","members":["jinhsi","zhezhi","youhu"],"score":86,"tier":"alternative","label":"금희·절지·유호 협동 공격 조합","tags":["공명 스킬","협동 공격"]}
     ,{"id":"jinhsi_lumi","members":["jinhsi","lumi","shorekeeper"],"score":84,"tier":"alternative","label":"금희·루미 공명 스킬 대체 조합","tags":["공명 스킬","협동 공격"]}
     ,{"id":"calcharo_yinlin_buling","members":["calcharo","yinlin","buling"],"score":81,"tier":"expansion","label":"카카루·음림·복링 공명 해방 조합","tags":["공명 해방","전도"]}
+    ,{"id":"calcharo_yinlin_rover_electro","members":["calcharo","yinlin","rover-electro"],"score":79,"tier":"expansion","label":"카카루·음림·전도 방랑자 확장 조합","tags":["공명 해방","전도"]}
     ,{"id":"encore_yangyang","members":["encore","yangyang","shorekeeper"],"score":79,"tier":"expansion","label":"앙코·양양 순환 대체 조합","tags":["공명 해방","용융"]}
     ,{"id":"jiyan_aalto","members":["jiyan","aalto","shorekeeper"],"score":79,"tier":"alternative","label":"기염·알토 기류 대체 조합","tags":["강공","기류"]}
     ,{"id":"calcharo_jianxin","members":["calcharo","jianxin","shorekeeper"],"score":80,"tier":"alternative","label":"카카루·감심 공명 해방 조합","tags":["공명 해방","전도"]}
@@ -94,6 +95,7 @@
     "iuno":{"position":"carry","meta_value":8,"damage":["공명 해방","강공"],"archetypes":["공명 해방"]},
     "luuk-herssen":{"position":"carry","meta_value":8.5,"damage":["일반 공격","조화도 파괴","회절"],"archetypes":["조화도 파괴"]},
     "xiangli-yao":{"position":"carry","meta_value":4.5,"damage":["공명 해방","전도"],"archetypes":["공명 해방","전도"]},
+    "rover-electro":{"position":"amplifier","provides":["전도","공명 해방"],"archetypes":["전도","공명 해방"],"support_value":5},
     "lingyang":{"position":"carry","damage":["일반 공격","응결"],"archetypes":["일반 공격","응결"]},
     "chixia":{"position":"carry","damage":["공명 해방","용융"],"archetypes":["공명 해방","용융"]},
     "encore":{"position":"carry","damage":["일반 공격","용융"],"archetypes":["일반 공격","용융"]},
