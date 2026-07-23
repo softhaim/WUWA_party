@@ -1392,8 +1392,8 @@
     "live2d_atlas_source": "/Game/Aki/UI/UIResources/Common/Spine/Portraits/Portraits_Xuanling/Portraits_Xuanling.Portraits_Xuanling-atlas",
     "live2d_skeleton_url": "https://static.nanoka.cc/assets/ww/portraits/Portraits_Xuanling/Portraits_Xuanling.skel",
     "live2d_atlas_url": "https://static.nanoka.cc/assets/ww/portraits/Portraits_Xuanling/Portraits_Xuanling.atlas",
-    "live2d_available": false,
-    "live2d_check": "skel:HTTPError:HTTP Error 404: Not Found"
+    "live2d_available": true,
+    "live2d_check": "ok:2 texture(s)"
   },
   {
     "id": "suisui",
@@ -1422,7 +1422,7 @@
     "live2d_atlas_source": "/Game/Aki/UI/UIResources/Common/Spine/Portraits/Portraits_Suisui/Portraits_Suisui.Portraits_Suisui-atlas",
     "live2d_skeleton_url": "https://static.nanoka.cc/assets/ww/portraits/Portraits_Suisui/Portraits_Suisui.skel",
     "live2d_atlas_url": "https://static.nanoka.cc/assets/ww/portraits/Portraits_Suisui/Portraits_Suisui.atlas",
-    "live2d_available": false,
-    "live2d_check": "skel:HTTPError:HTTP Error 404: Not Found"
+    "live2d_available": true,
+    "live2d_check": "ok:2 texture(s)"
   }
 ]
