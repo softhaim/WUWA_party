@@ -346,9 +346,23 @@ async function recommend(){
     const result=await api("/api/recommend",{method:"POST",body:JSON.stringify({team_count:$("#teamCount").value,roster:state.roster})});
     $("#recommendMessage").textContent=result.message;
     const teamCard=t=>`<article class="team-card"><div class="team-head"><h3>TEAM ${String(t.id).padStart(2,"0")} <small>${escapeHtml(t.confidence)} 신뢰도 · 육성 ${t.readiness}%</small></h3><span class="score">${t.score}</span></div><div class="team-members">${t.members.map(m=>`<div class="member"><img src="${imageUrl(m.image)}" alt="${escapeHtml(m.name_ko)}" referrerpolicy="no-referrer"><div><strong>${escapeHtml(m.name_ko)}</strong><small>${escapeHtml(m.slot||m.role)}</small></div></div>`).join("")}</div><div class="team-tags">${(t.tags||[]).map(tag=>`<span>${escapeHtml(tag)}</span>`).join("")}</div><p class="team-reason">${escapeHtml(t.reason)}</p>${t.score_details?`<p class="team-reason">조합 ${t.score_details.composition} · 최신성 ${t.score_details.meta} · 돌파/무기 ${t.score_details.investment} · 육성 ${t.score_details.build}</p>`:""}</article>`;
-    $("#teamResults").innerHTML=result.configurations?.length?result.configurations.map((config,index)=>`<section class="configuration"><div class="configuration-head"><div><span>ALTERNATIVE ${String(index+1).padStart(2,"0")}</span><h2>${escapeHtml(config.label)}</h2></div><p>${config.team_count}개 파티 · 조합 지수 ${config.total_score} · 전투 점수 ${config.combat_score}</p></div><div class="configuration-teams">${config.teams.map(teamCard).join("")}</div></section>`).join(""):`<div class="empty">${escapeHtml(result.message)}</div>`;
+    const configs=result.configurations||[];
+    $("#teamResults").innerHTML=configs.length?`<div class="configuration-tabs" role="tablist" aria-label="추천 구성 선택">${configs.map((config,index)=>`<button type="button" role="tab" aria-selected="${index===0}" class="${index===0?"active":""}" data-config-index="${index}"><strong>${escapeHtml(config.label.replace("추천 구성 ",""))}</strong><span>${config.team_count}팀 · ${config.total_score}</span></button>`).join("")}</div>${configs.map((config,index)=>`<section class="configuration ${index===0?"active":""}" data-config-panel="${index}" ${index===0?"":"hidden"}><div class="configuration-head"><div><span>ALTERNATIVE ${String(index+1).padStart(2,"0")}</span><h2>${escapeHtml(config.label)}</h2></div><p>${config.team_count}개 파티 · 조합 지수 ${config.total_score} · 전투 점수 ${config.combat_score}</p></div><div class="configuration-teams">${config.teams.map(teamCard).join("")}</div></section>`).join("")}`:`<div class="empty">${escapeHtml(result.message)}</div>`;
   }catch(error){$("#recommendMessage").textContent=error.message;$("#teamResults").innerHTML=`<div class="empty">${escapeHtml(error.message)}</div>`;toast(error.message);}
   finally{button.disabled=false;button.textContent="✦ 자동 파티 구성";}
+}
+
+function selectConfiguration(index){
+  document.querySelectorAll("[data-config-index]").forEach(button=>{
+    const active=button.dataset.configIndex===String(index);
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll("[data-config-panel]").forEach(panel=>{
+    const active=panel.dataset.configPanel===String(index);
+    panel.hidden=!active;
+    panel.classList.toggle("active", active);
+  });
 }
 
 function toast(message){const el=$("#toast");el.textContent=message;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),1800);}
@@ -370,6 +384,7 @@ async function init(){
     renderFilters();renderGrid();
   });
   $("#characterGrid").addEventListener("click",e=>{const card=e.target.closest("[data-id]");if(card)openCharacter(card.dataset.id);});
+  $("#teamResults").addEventListener("click",e=>{const button=e.target.closest("[data-config-index]");if(button)selectConfiguration(button.dataset.configIndex);});
   $("#saveCharacter").addEventListener("click",saveActive);$("#recommendButton").addEventListener("click",recommend);$("#dialogLiveToggle").addEventListener("click",toggleLive2d);
   ["#dialogSequence","#dialogLevel","#dialogBuild","#dialogUses","#dialogSignature","#dialogWeaponRank"].forEach(s=>$(s).addEventListener("input",markOwned));
   $("#maxLevel").addEventListener("click",()=>{$("#dialogLevel").value=90;markOwned();});

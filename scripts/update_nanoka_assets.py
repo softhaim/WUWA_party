@@ -13,8 +13,8 @@ OUTPUT_DIR = ROOT / "static" / "characters" / "nanoka"
 HEAD_DIR = OUTPUT_DIR / "head"
 PILE_DIR = OUTPUT_DIR / "pile"
 ICON_DIR = ROOT / "static" / "icons"
-NANOKA_CHARACTER_URL = "https://static.nanoka.cc/ww/3.5/character.json"
-NANOKA_CHARACTER_DETAIL_URL = "https://static.nanoka.cc/ww/3.5/en/character/{id}.json"
+NANOKA_CHARACTER_URL = "https://static.nanoka.cc/ww/3.6/character.json"
+NANOKA_CHARACTER_DETAIL_URL = "https://static.nanoka.cc/ww/3.6/en/character/{id}.json"
 NANOKA_ASSET_PREFIX = "https://static.nanoka.cc/assets/ww"
 
 ELEMENT_ICON_PATHS = {
@@ -107,6 +107,8 @@ CHARACTER_ALIASES = {
     "chisa": "Chisa",
     "yangyang-xuanling": "Yangyang: Xuanling",
     "suisui": "Suisui",
+    "qingxiao": "Qingxiao",
+    "jingran": "Jingran",
 }
 
 

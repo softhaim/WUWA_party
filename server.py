@@ -380,7 +380,7 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         # A tiny recency tie-breaker keeps newly released BiS cores from losing
         # to an older core only because of a few tenths of scarcity math.
         # It is intentionally too small to overcome a real composition or build gap.
-        if template.get("patch") in {"3.5", "3.5-beta"} and effective_tier == "bis":
+        if template.get("patch") in {"3.5", "3.5-beta", "3.6", "3.6-beta"} and effective_tier == "bis":
             allocation_score += 1.0
     premium_support_value = max(
         (

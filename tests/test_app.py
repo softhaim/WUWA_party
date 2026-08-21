@@ -18,11 +18,14 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn("imageUrl(m.image)", app)
         self.assertIn("dialogLiveToggle", index)
         self.assertIn("toggleLive2d", app)
+        self.assertIn("configuration-tabs", app)
+        self.assertIn("selectConfiguration", app)
+        self.assertIn("data-config-panel", app)
 
     def test_catalog_is_valid_and_unique(self):
         characters = server.load_characters()
-        self.assertEqual(len(characters), 56)
-        self.assertEqual(len({c["id"] for c in characters}), 56)
+        self.assertEqual(len(characters), 58)
+        self.assertEqual(len({c["id"] for c in characters}), 58)
         self.assertTrue(all(c["image"].startswith("/api/image/") for c in characters))
         self.assertTrue(all(c["image_source"].startswith(("https://", "static/")) for c in characters))
 
@@ -45,6 +48,21 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertEqual(server.character_image("suisui")[1], "image/webp")
         self.assertEqual(server.character_image("yangyang-xuanling", "detail_image_source")[1], "image/webp")
 
+    def test_qingxiao_and_jingran_nanoka_assets_are_registered(self):
+        characters = {character["id"]: character for character in server.load_characters()}
+        self.assertEqual(characters["qingxiao"]["name_ko"], "청초")
+        self.assertEqual(characters["qingxiao"]["element_ko"], "기류")
+        self.assertEqual(characters["qingxiao"]["weapon_ko"], "직검")
+        self.assertEqual(characters["jingran"]["name_ko"], "경연")
+        self.assertEqual(characters["jingran"]["element_ko"], "용융")
+        self.assertEqual(characters["jingran"]["weapon_ko"], "대검")
+        self.assertIn("Portraits_Qingxiao", characters["qingxiao"]["live2d_skeleton_url"])
+        self.assertIn("Portraits_Jingran", characters["jingran"]["live2d_skeleton_url"])
+        self.assertIn("T_IconRole_Pile_Qingxiao_UI.webp", characters["qingxiao"]["nanoka_source"])
+        self.assertIn("T_IconRole_Pile_Jingran_UI.webp", characters["jingran"]["nanoka_source"])
+        self.assertEqual(server.character_image("qingxiao")[1], "image/webp")
+        self.assertEqual(server.character_image("jingran", "detail_image_source")[1], "image/webp")
+
     def test_catalog_is_sorted_by_element_then_korean_name(self):
         characters = server.load_characters()
         order = {element: index for index, element in enumerate(("응결", "용융", "전도", "기류", "회절", "인멸"))}
@@ -59,6 +77,9 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertLess(names_by_element["응결"].index("수수"), names_by_element["응결"].index("유호"))
         self.assertIn("양양: 현령", names_by_element["인멸"])
         self.assertLess(names_by_element["인멸"].index("양양: 현령"), names_by_element["인멸"].index("카멜리아"))
+        self.assertIn("경연", names_by_element["용융"])
+        self.assertLess(names_by_element["용융"].index("경연"), names_by_element["용융"].index("데니아"))
+        self.assertIn("청초", names_by_element["기류"])
 
     def test_dynamic_score_rewards_complete_latest_bis(self):
         ids = ("hiyuki", "lucilla", "chisa")
@@ -149,6 +170,73 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn({"yangyang-xuanling", "suisui", "chisa"}, teams)
         self.assertIn({"hiyuki", "lucilla", "suisui"}, teams)
         self.assertIn({"aemeath", "denia", "chisa"}, teams)
+
+    def test_qingxiao_uses_denia_when_it_does_not_break_aemeath_core(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in ("qingxiao", "denia", "mornye")
+        }
+        result = server.recommend({"roster": roster, "team_count": 1})
+        self.assertEqual(
+            {member["id"] for member in result["teams"][0]["members"]},
+            {"qingxiao", "denia", "mornye"},
+        )
+        self.assertIn("청초·데니아·모니에", result["teams"][0]["reason"])
+
+    def test_qingxiao_preserves_denia_for_aemeath_when_lynae_shell_is_available(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in ("qingxiao", "lynae", "mornye", "aemeath", "denia", "chisa")
+        }
+        result = server.recommend({"roster": roster, "team_count": 2})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+        self.assertIn({"aemeath", "denia", "chisa"}, teams)
+        self.assertIn({"qingxiao", "lynae", "mornye"}, teams)
+        self.assertNotIn({"qingxiao", "denia", "mornye"}, teams)
+
+    def test_qingxiao_gets_denia_when_chisa_is_better_spent_on_xuanling_and_cartethyia(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in (
+                "yangyang-xuanling", "suisui", "chisa",
+                "cartethyia", "ciaccona",
+                "aemeath", "lynae", "mornye",
+                "qingxiao", "denia", "shorekeeper",
+            )
+        }
+        roster["chisa"]["max_uses"] = 2
+        result = server.recommend({"roster": roster, "team_count": 4})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+        self.assertIn({"yangyang-xuanling", "suisui", "chisa"}, teams)
+        self.assertIn({"cartethyia", "ciaccona", "chisa"}, teams)
+        self.assertIn({"aemeath", "lynae", "mornye"}, teams)
+        self.assertIn({"qingxiao", "denia", "shorekeeper"}, teams)
+        self.assertNotIn({"aemeath", "denia", "chisa"}, teams)
+
+    def test_jingran_prefers_iuno_shorekeeper_heavy_attack_core(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in ("jingran", "iuno", "shorekeeper", "lupa", "mornye")
+        }
+        result = server.recommend({"roster": roster, "team_count": 1})
+        self.assertEqual(
+            {member["id"] for member in result["teams"][0]["members"]},
+            {"jingran", "iuno", "shorekeeper"},
+        )
+        self.assertIn("경연·유노·파수인", result["teams"][0]["reason"])
+
+    def test_jingran_lupa_mornye_survives_when_shorekeeper_is_allocated_elsewhere(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in (
+                "jingran", "lupa", "mornye",
+                "augusta", "iuno", "shorekeeper",
+            )
+        }
+        result = server.recommend({"roster": roster, "team_count": 2})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+        self.assertIn({"augusta", "iuno", "shorekeeper"}, teams)
+        self.assertIn({"jingran", "lupa", "mornye"}, teams)
 
     def test_hiyuki_uses_suisui_so_chisa_can_complete_aemeath_core(self):
         roster = {
