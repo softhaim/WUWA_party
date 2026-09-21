@@ -12,6 +12,15 @@
 - 같은 보유풀에서 추천 구성 A/B/C 비교
 - 보유풀과 추천 결과를 근거로 답하는 로컬 AI 육성 가이드
 
+## 메인 화면
+<img width="1539" height="983" alt="스크린샷 2026-09-21 오후 5 01 17" src="https://github.com/user-attachments/assets/d35a3fb8-6891-4b36-a050-c14363ef6222" />
+
+## 파티 추천
+<img width="1539" height="983" alt="스크린샷 2026-09-21 오후 5 01 40" src="https://github.com/user-attachments/assets/601039e9-91cc-4281-a49f-06bd55b0377a" />
+
+## AI 가이드
+<img width="1539" height="983" alt="스크린샷 2026-09-21 오후 5 02 46" src="https://github.com/user-attachments/assets/eb5fc13b-486e-47ac-8e98-1ac810218651" />
+
 ## 빠른 시작
 
 Python 3.11 이상이 필요합니다. 파티 플래너만 사용할 때는 외부 패키지가 필요하지 않습니다.
