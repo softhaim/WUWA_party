@@ -237,11 +237,28 @@ def build_grounding(
                 if not any(member["id"] in mentioned_ids for member in team["members"])
             ][:3]
             if preserved:
+                competing_cores: list[tuple[str, set[str]]] = []
+                for character in mentioned:
+                    for template in rules.get("templates", []):
+                        members = set(template.get("members", []))
+                        if character["id"] in members:
+                            competing_cores.append((character["name_ko"], members - {character["id"]}))
+
+                def preserved_note(team: dict[str, Any]) -> str:
+                    team_ids = {member["id"] for member in team["members"]}
+                    freed = next(
+                        (name for name, core in competing_cores if len(core & team_ids) >= 2),
+                        None,
+                    )
+                    if freed:
+                        return f"{freed}를 쓰던 기존 코어를 대체 파츠로 유지해 {freed}를 다른 파티에 배분하게 함"
+                    return "질문한 캐릭터를 소비하지 않는 별도의 고점 조합"
+
                 section += "\n질문한 캐릭터 없이도 유지되는 상위 파티:\n" + "\n".join(
-                    f"- {' / '.join(member['name_ko'] for member in team['members'])}({team['score']}점): 이 파티는 질문한 캐릭터를 소비하지 않는 대체 조합"
+                    f"- {' / '.join(member['name_ko'] for member in team['members'])}({team['score']}점): {preserved_note(team)}"
                     for team in preserved
                 )
-            section += "\n답변 지침: 질문한 캐릭터의 실제 사용처만 결론부터 말한다. '추천 엔진 결과'에 함께 들어간 사용처는 동시에 쓰는 배정이며 대체안으로 표현하면 안 된다. '다른 전체 배분안'만 대안이다. 질문한 캐릭터를 쓰지 않는 고점 파티는 열등하다고 표현하지 말고, 해당 캐릭터를 다른 파티에 배분할 수 있게 해 주는 기회비용 절감 근거로 설명한다. 전체 파티 목록은 반복하지 않는다."
+            section += "\n답변 지침: 질문한 캐릭터의 실제 사용처만 결론부터 말한다. '추천 엔진 결과'에 함께 들어간 사용처는 동시에 쓰는 배정이며 대체안으로 표현하면 안 된다. '다른 전체 배분안'만 대안이다. 질문한 캐릭터를 쓰지 않는 고점 파티는 열등하다고 표현하지 말고, 해당 캐릭터를 다른 파티에 배분할 수 있게 해 주는 기회비용 절감 근거로 설명한다. 이 근거가 자료에 있으면 대체 파츠로 유지되는 대표 파티를 최소 하나 지목한다. 전체 파티 목록은 반복하지 않는다."
             sections.append(section)
 
     if not mentioned:
