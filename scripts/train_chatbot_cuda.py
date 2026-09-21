@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 
 
@@ -19,7 +18,6 @@ DEFAULT_CONFIG = ROOT / "local_ai" / "configs" / "cuda_qwen3_4b.json"
 def main() -> None:
     parser = argparse.ArgumentParser(description="NVIDIA CUDA용 Qwen3 4B QLoRA 학습")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--wandb-mode", choices=("offline", "online", "disabled"), default="disabled")
     args = parser.parse_args()
     config = json.loads(args.config.read_text(encoding="utf-8"))
 
@@ -37,7 +35,6 @@ def main() -> None:
 
     if not torch.cuda.is_available():
         raise SystemExit("CUDA GPU를 찾지 못했습니다. 이 파일은 Windows/Linux NVIDIA 환경용입니다.")
-    os.environ["WANDB_MODE"] = args.wandb_mode
     tokenizer = AutoTokenizer.from_pretrained(config["base_model"], use_fast=True)
     tokenizer.pad_token = tokenizer.eos_token
     quantization = BitsAndBytesConfig(
@@ -84,7 +81,7 @@ def main() -> None:
         logging_steps=2,
         save_steps=10,
         load_best_model_at_end=True,
-        report_to=[] if args.wandb_mode == "disabled" else ["wandb"],
+        report_to=[],
         run_name="resonance-lab-qwen3-4b-cuda",
         bf16=torch.cuda.is_bf16_supported(),
         fp16=not torch.cuda.is_bf16_supported(),

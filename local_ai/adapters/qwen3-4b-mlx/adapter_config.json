@@ -31,8 +31,6 @@
         "sgd": {},
         "adafactor": {}
     },
-    "project_name": "resonance-lab-local-ai",
-    "report_to": "wandb",
     "resume_adapter_file": null,
     "save_every": 10,
     "seed": 20260921,

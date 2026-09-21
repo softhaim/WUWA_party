@@ -1,8 +1,7 @@
-"""Create one uploadable runtime bundle for Google Drive or other storage.
+"""Create an MLX, Transformers, or universal runtime bundle.
 
-The archive contains only what another Mac needs for inference: the visible
-MLX 4-bit base checkpoint and the trained MLX LoRA adapter. Training datasets,
-runs, W&B logs, roster data, and secrets are deliberately excluded.
+Training datasets, run logs, roster data, virtual environments, and secrets are
+deliberately excluded.
 """
 
 from __future__ import annotations
@@ -17,9 +16,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_AI = ROOT / "local_ai"
-MODEL = LOCAL_AI / "models" / "qwen3-4b-instruct-2507-mlx-4bit"
-ADAPTER = LOCAL_AI / "adapters" / "qwen3-4b-mlx"
-OUTPUT = LOCAL_AI / "dist" / "resonance-qwen3-4b-mlx-runtime.zip"
+RUNTIMES = {
+    "mlx": (
+        LOCAL_AI / "models" / "qwen3-4b-instruct-2507-mlx-4bit",
+        LOCAL_AI / "adapters" / "qwen3-4b-mlx",
+    ),
+    "transformers": (
+        LOCAL_AI / "models" / "qwen3-4b-instruct-2507-hf",
+        LOCAL_AI / "adapters" / "qwen3-4b-cuda",
+    ),
+}
+OUTPUT = LOCAL_AI / "dist" / "resonance-qwen3-4b-runtime.zip"
 
 
 def sha256(path: Path) -> str:
@@ -31,23 +38,39 @@ def sha256(path: Path) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Google Drive 업로드용 MLX 모델+LoRA 번들 생성")
+    parser = argparse.ArgumentParser(description="Google Drive 업로드용 모델+LoRA 번들 생성")
+    parser.add_argument("--runtime", choices=("auto", "mlx", "transformers", "universal"), default="auto")
     parser.add_argument("--output", type=Path, default=OUTPUT)
     args = parser.parse_args()
     output = args.output.expanduser().resolve()
-    required = [MODEL / "config.json", MODEL / "model.safetensors", ADAPTER / "adapter_config.json", ADAPTER / "adapters.safetensors"]
-    missing = [str(path) for path in required if not path.is_file()]
-    if missing:
-        raise SystemExit("번들에 필요한 파일이 없습니다:\n- " + "\n- ".join(missing))
-
-    files = sorted(path for folder in (MODEL, ADAPTER) for path in folder.rglob("*") if path.is_file() and ".cache" not in path.parts)
+    available = {}
+    for name, (model, adapter) in RUNTIMES.items():
+        adapter_weight = "adapters.safetensors" if name == "mlx" else "adapter_model.safetensors"
+        if (model / "config.json").is_file() and (adapter / "adapter_config.json").is_file() and (adapter / adapter_weight).is_file():
+            available[name] = (model, adapter)
+    if args.runtime == "universal":
+        selected = ["mlx", "transformers"]
+    elif args.runtime == "auto":
+        selected = list(available)
+    else:
+        selected = [args.runtime]
+    missing = [name for name in selected if name not in available]
+    if missing or not selected:
+        raise SystemExit(
+            "요청한 런타임 파일이 없습니다: " + ", ".join(missing or ["mlx/transformers"])
+            + "\nscripts/download_local_model.py --backend all 로 필요한 기본 모델을 준비하세요."
+        )
+    folders = [folder for name in selected for folder in RUNTIMES[name]]
+    files = sorted({path for folder in folders for path in folder.rglob("*") if path.is_file() and ".cache" not in path.parts})
     manifest = {
-        "format": 1,
-        "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
-        "model_source": "https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        "format": 2,
+        "runtimes": selected,
+        "model_sources": {
+            "mlx": "https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit",
+            "transformers": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507",
+        },
         "base_model": "Qwen/Qwen3-4B-Instruct-2507",
         "license": "Apache-2.0",
-        "adapter": "resonance-lab-qwen3-4b-mlx-lora",
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "files": {str(path.relative_to(LOCAL_AI)): sha256(path) for path in files},
     }
@@ -60,7 +83,7 @@ def main() -> None:
             relative = path.relative_to(LOCAL_AI)
             print(f"[add] {relative}")
             archive.write(path, relative.as_posix())
-    print(f"\n[done] {output}\nGoogle Drive에는 이 ZIP 파일 하나만 업로드하세요.")
+    print(f"\n[done] {output}\n[runtimes] {', '.join(selected)}")
 
 
 if __name__ == "__main__":

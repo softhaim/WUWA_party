@@ -20,8 +20,6 @@ max_seq_length: 512
 grad_checkpoint: true
 grad_accumulation_steps: 4
 mask_prompt: true
-# W&B는 scripts/train_chatbot.py에서 명시적으로 요청한 경우에만 켭니다.
-# 기본 학습은 training.log, metrics.jsonl, report.html만 생성합니다.
 lora_parameters:
   keys: ["self_attn.q_proj", "self_attn.v_proj"]
   rank: 8

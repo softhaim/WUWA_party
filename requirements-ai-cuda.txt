@@ -1,7 +1,4 @@
-# Windows/Linux + NVIDIA CUDA training backend. Install PyTorch for the CUDA
-# version on the machine first: https://pytorch.org/get-started/locally/
-transformers>=4.57,<6
+-r requirements-ai-transformers.txt
+# CUDA training extras. Install PyTorch for the machine's CUDA version first:
+# https://pytorch.org/get-started/locally/
 datasets>=4,<5
-accelerate>=1.10,<2
-peft>=0.17,<1
-bitsandbytes>=0.48,<1

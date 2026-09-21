@@ -1,4 +1,5 @@
 import json
+import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,10 +7,40 @@ from unittest.mock import patch
 
 import server
 import local_chatbot
+from scripts.convert_mlx_adapter_to_peft import convert
 from scripts.training_metrics import parse_metric
 
 
 class ResonanceLabTests(unittest.TestCase):
+    def test_chat_backend_is_selected_by_platform(self):
+        with patch("local_chatbot.platform.system", return_value="Darwin"), patch(
+            "local_chatbot.platform.machine", return_value="arm64"
+        ):
+            self.assertEqual(local_chatbot.detect_backend(), "mlx")
+        with patch("local_chatbot.platform.system", return_value="Windows"), patch(
+            "local_chatbot.platform.machine", return_value="AMD64"
+        ):
+            self.assertEqual(local_chatbot.detect_backend(), "transformers")
+        self.assertEqual(local_chatbot.detect_backend("transformers"), "transformers")
+
+    @unittest.skipUnless(importlib.util.find_spec("safetensors"), "safetensors optional dependency")
+    def test_mlx_adapter_converts_to_peft_shapes(self):
+        from safetensors import safe_open
+
+        source = server.ROOT / "local_ai" / "adapters" / "qwen3-4b-mlx"
+        with tempfile.TemporaryDirectory() as folder:
+            output = convert(source, Path(folder) / "peft")
+            config = json.loads((output / "adapter_config.json").read_text(encoding="utf-8"))
+            self.assertEqual(config["peft_type"], "LORA")
+            self.assertEqual(config["target_modules"], ["q_proj", "v_proj"])
+            with safe_open(output / "adapter_model.safetensors", framework="numpy") as weights:
+                key = "base_model.model.model.layers.24.self_attn.q_proj.lora_A.weight"
+                self.assertEqual(weights.get_tensor(key).shape, (8, 2560))
+
+    def test_cuda_adapter_is_available_to_web_runtime(self):
+        adapter = server.ROOT / "local_ai" / "adapters" / "qwen3-4b-cuda"
+        self.assertTrue(local_chatbot._peft_adapter_ready(adapter))
+
     def test_training_log_parser_handles_terminal_period(self):
         metric = parse_metric("Test loss 4.111, Test ppl 61.019.")
         self.assertEqual(metric, {"type": "test", "loss": 4.111, "perplexity": 61.019})

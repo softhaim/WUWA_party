@@ -54,7 +54,7 @@ def _polyline(values: list[tuple[int, float]], width: int = 760, height: int = 2
 
 
 def write_html_report(run_dir: Path, manifest: dict[str, Any], metrics: list[dict[str, Any]]) -> None:
-    """Write a dependency-free report so loss curves remain viewable without W&B login."""
+    """Write a dependency-free local report for loss curves and test metrics."""
     train = [(m["step"], m["loss"]) for m in metrics if m["type"] == "train"]
     valid = [(m["step"], m["loss"]) for m in metrics if m["type"] == "validation"]
     test = next((m for m in reversed(metrics) if m["type"] == "test"), None)

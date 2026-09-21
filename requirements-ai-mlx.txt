@@ -1,0 +1,2 @@
+-r requirements-ai.txt
+mlx-lm[train]==0.31.3

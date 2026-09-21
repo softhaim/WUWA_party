@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import copy
 import os
+import platform
 import re
 import threading
 from pathlib import Path
@@ -10,12 +11,12 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parent
-LOCAL_MODEL = ROOT / "local_ai" / "models" / "qwen3-4b-instruct-2507-mlx-4bit"
-MODEL_REPOSITORY = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
-# Prefer the visible project copy. The repository id is only a fallback for a
-# developer who starts the app before running scripts/download_local_model.py.
-DEFAULT_MODEL = str(LOCAL_MODEL) if (LOCAL_MODEL / "config.json").exists() else MODEL_REPOSITORY
-DEFAULT_ADAPTER = ROOT / "local_ai" / "adapters" / "qwen3-4b-mlx"
+MLX_MODEL = ROOT / "local_ai" / "models" / "qwen3-4b-instruct-2507-mlx-4bit"
+TRANSFORMERS_MODEL = ROOT / "local_ai" / "models" / "qwen3-4b-instruct-2507-hf"
+MLX_REPOSITORY = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+TRANSFORMERS_REPOSITORY = "Qwen/Qwen3-4B-Instruct-2507"
+MLX_ADAPTER = ROOT / "local_ai" / "adapters" / "qwen3-4b-mlx"
+PEFT_ADAPTER = ROOT / "local_ai" / "adapters" / "qwen3-4b-cuda"
 SYSTEM_PROMPT = """당신은 명조: 워더링 웨이브 전용 한국어 육성 도우미 '레조'다.
 반드시 아래 원칙을 지킨다.
 1. [현재 앱 데이터]에 있는 사실만 게임의 확정 정보처럼 말한다.
@@ -33,6 +34,27 @@ SYSTEM_PROMPT = """당신은 명조: 워더링 웨이브 전용 한국어 육성
 
 def _adapter_ready(path: Path) -> bool:
     return (path / "adapters.safetensors").exists() and (path / "adapter_config.json").exists()
+
+
+def _peft_adapter_ready(path: Path) -> bool:
+    weights = (path / "adapter_model.safetensors").exists() or (path / "adapter_model.bin").exists()
+    return weights and (path / "adapter_config.json").exists()
+
+
+def detect_backend(requested: str | None = None) -> str:
+    """Choose MLX on Apple Silicon and Transformers everywhere else.
+
+    RESONANCE_BACKEND=mlx or transformers can override the automatic choice.
+    The dependency checks intentionally happen during loading so a missing
+    runtime produces one actionable error instead of silently changing models.
+    """
+    selected = (requested or os.environ.get("RESONANCE_BACKEND", "auto")).lower()
+    if selected not in {"auto", "mlx", "transformers"}:
+        raise ValueError("RESONANCE_BACKEND는 auto, mlx, transformers 중 하나여야 합니다.")
+    if selected != "auto":
+        return selected
+    is_apple_silicon = platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}
+    return "mlx" if is_apple_silicon else "transformers"
 
 
 def _clean_answer(text: str) -> str:
@@ -275,49 +297,125 @@ def build_grounding(
 
 
 class LocalChatbot:
-    def __init__(self) -> None:
-        self.model_id = os.environ.get("RESONANCE_MODEL", DEFAULT_MODEL)
-        self.adapter_path = Path(os.environ.get("RESONANCE_ADAPTER", str(DEFAULT_ADAPTER)))
+    def __init__(self, backend: str | None = None) -> None:
+        self.backend = detect_backend(backend)
+        if self.backend == "mlx":
+            default_model = str(MLX_MODEL) if (MLX_MODEL / "config.json").exists() else MLX_REPOSITORY
+            default_adapter = MLX_ADAPTER
+        else:
+            default_model = str(TRANSFORMERS_MODEL) if (TRANSFORMERS_MODEL / "config.json").exists() else TRANSFORMERS_REPOSITORY
+            default_adapter = PEFT_ADAPTER
+        self.model_id = os.environ.get("RESONANCE_MODEL", default_model)
+        self.adapter_path = Path(os.environ.get("RESONANCE_ADAPTER", str(default_adapter)))
         self._model: Any = None
         self._tokenizer: Any = None
         self._load_error: str | None = None
         self._lock = threading.Lock()
 
-    def _load(self) -> None:
-        """Lazily assemble the inference model from base weights + LoRA.
+    def _load_mlx(self) -> None:
+        """Load the Apple Silicon 4-bit checkpoint and MLX LoRA."""
+        if importlib.util.find_spec("mlx_lm") is None:
+            raise RuntimeError("MLX-LM이 설치되지 않았습니다. README의 Apple Silicon 설치 단계를 실행해 주세요.")
+        from mlx_lm import load
 
-        `mlx_lm.load` is MLX-LM's normal public loader. Our QLoRA run does not
-        rewrite or duplicate all 4 billion base parameters. It saves only small
-        learned low-rank matrices in `adapters.safetensors`, plus the recipe in
-        `adapter_config.json`. Supplying `adapter_path` makes MLX-LM recreate
-        those LoRA layers and load their deltas on top of the frozen 4-bit base.
+        kwargs: dict[str, Any] = {}
+        if _adapter_ready(self.adapter_path):
+            kwargs["adapter_path"] = str(self.adapter_path)
+        self._model, self._tokenizer = load(self.model_id, **kwargs)
+
+    def _load_transformers(self) -> None:
+        """Load a CUDA/CPU Transformers model and an optional PEFT LoRA."""
+        missing = [name for name in ("torch", "transformers") if importlib.util.find_spec(name) is None]
+        if missing:
+            raise RuntimeError(
+                f"{', '.join(missing)} 패키지가 없습니다. README의 Windows/Linux 설치 단계를 실행해 주세요."
+            )
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        kwargs: dict[str, Any] = {"low_cpu_mem_usage": True}
+        if torch.cuda.is_available():
+            kwargs["device_map"] = "auto"
+            kwargs["torch_dtype"] = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            if importlib.util.find_spec("bitsandbytes") is not None:
+                from transformers import BitsAndBytesConfig
+
+                kwargs["quantization_config"] = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_use_double_quant=True,
+                    bnb_4bit_compute_dtype=kwargs["torch_dtype"],
+                )
+        else:
+            kwargs["torch_dtype"] = torch.float32
+
+        self._tokenizer = AutoTokenizer.from_pretrained(self.model_id, use_fast=True)
+        if self._tokenizer.pad_token_id is None:
+            self._tokenizer.pad_token = self._tokenizer.eos_token
+        self._model = AutoModelForCausalLM.from_pretrained(self.model_id, **kwargs)
+        if _peft_adapter_ready(self.adapter_path):
+            if importlib.util.find_spec("peft") is None:
+                raise RuntimeError("PEFT 어댑터가 있지만 peft 패키지가 설치되지 않았습니다.")
+            from peft import PeftModel
+
+            self._model = PeftModel.from_pretrained(self._model, str(self.adapter_path))
+        self._model.eval()
+
+    def _load(self) -> None:
+        """Lazily assemble the platform runtime from base weights + LoRA.
+
+        Apple Silicon uses MLX + its LoRA format. Windows/Linux use
+        Transformers + PEFT and can directly load the CUDA training output.
 
         Loading is delayed until the first open-ended chat request so ordinary
-        roster/planner pages do not reserve several GB of unified memory.
+        roster/planner pages do not reserve model memory.
         """
         if self._model is not None:
             return
-        if importlib.util.find_spec("mlx_lm") is None:
-            raise RuntimeError("MLX-LM이 설치되지 않았습니다. README의 로컬 AI 설치 단계를 실행해 주세요.")
         try:
-            from mlx_lm import load
-
-            # Without a complete adapter the app still runs with the base model.
-            kwargs: dict[str, Any] = {}
-            if _adapter_ready(self.adapter_path):
-                kwargs["adapter_path"] = str(self.adapter_path)
-            self._model, self._tokenizer = load(self.model_id, **kwargs)
+            if self.backend == "mlx":
+                self._load_mlx()
+            else:
+                self._load_transformers()
             self._load_error = None
         except Exception as exc:
             self._load_error = str(exc)
-            raise RuntimeError(f"로컬 모델을 불러오지 못했습니다: {exc}") from exc
+            raise RuntimeError(f"{self.backend} 모델을 불러오지 못했습니다: {exc}") from exc
+
+    def _generate_mlx(self, prompt: str) -> str:
+        from mlx_lm import generate
+        from mlx_lm.sample_utils import make_sampler
+
+        return generate(
+            self._model,
+            self._tokenizer,
+            prompt=prompt,
+            max_tokens=360,
+            sampler=make_sampler(temp=0.1, top_p=0.85),
+            verbose=False,
+        )
+
+    def _generate_transformers(self, prompt: str) -> str:
+        import torch
+
+        inputs = self._tokenizer(prompt, return_tensors="pt")
+        device = self._model.get_input_embeddings().weight.device
+        inputs = {name: tensor.to(device) for name, tensor in inputs.items()}
+        with torch.inference_mode():
+            output = self._model.generate(
+                **inputs,
+                max_new_tokens=360,
+                do_sample=True,
+                temperature=0.1,
+                top_p=0.85,
+                pad_token_id=self._tokenizer.eos_token_id,
+            )
+        generated = output[0, inputs["input_ids"].shape[1] :]
+        return self._tokenizer.decode(generated, skip_special_tokens=True)
 
     def answer(self, messages: list[dict[str, str]], grounding: str) -> str:
         with self._lock:
             self._load()
-            from mlx_lm import generate
-            from mlx_lm.sample_utils import make_sampler
-
             safe_history = [
                 {"role": item.get("role", "user"), "content": str(item.get("content", ""))[:1800]}
                 for item in messages[-8:]
@@ -327,14 +425,7 @@ class LocalChatbot:
                 raise ValueError("질문을 입력해 주세요.")
             chat = [{"role": "system", "content": SYSTEM_PROMPT + "\n\n[현재 앱 데이터]\n" + grounding}, *safe_history]
             prompt = self._tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
-            result = generate(
-                self._model,
-                self._tokenizer,
-                prompt=prompt,
-                max_tokens=360,
-                sampler=make_sampler(temp=0.1, top_p=0.85),
-                verbose=False,
-            )
+            result = self._generate_mlx(prompt) if self.backend == "mlx" else self._generate_transformers(prompt)
             return _clean_answer(result)
 
 

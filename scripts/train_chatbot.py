@@ -2,8 +2,7 @@
 
 This wrapper is the single entry point for Mac training. It regenerates the
 dataset, creates a timestamped run directory, streams MLX output to both the
-terminal and training.log, extracts losses into metrics.jsonl, records W&B
-offline by default, evaluates the test split, and promotes the resulting LoRA
+terminal and training.log, extracts losses into metrics.jsonl, evaluates the test split, and promotes the resulting LoRA
 adapter to the service directory only after success.
 """
 
@@ -73,7 +72,6 @@ def finalize(run_dir: Path, manifest: dict, code: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Mac MLX용 Qwen3 4B QLoRA 학습")
-    parser.add_argument("--wandb-mode", choices=("offline", "online", "disabled"), default="disabled")
     parser.add_argument("--skip-dataset", action="store_true", help="기존 JSONL을 그대로 사용")
     parser.add_argument("--config", type=Path, default=CONFIG)
     parser.add_argument("--resume-run", help="완료된 학습 실행의 test/보고서/배포만 재개")
@@ -94,7 +92,7 @@ def main() -> None:
         manifest["status"] = "evaluating"
         (run_dir / "run.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         env = os.environ.copy()
-        env.update({"WANDB_MODE": "disabled", "PYTHONUNBUFFERED": "1"})
+        env.update({"PYTHONUNBUFFERED": "1"})
         test_command = [cli, "--model", str(MODEL), "--adapter-path", str(run_adapter), "--data", str(ROOT / "local_ai" / "dataset"), "--test", "--test-batches", "-1", "--batch-size", "1", "--max-seq-length", "512"]
         finalize(run_dir, manifest, stream(test_command, run_dir, env))
         return
@@ -103,8 +101,6 @@ def main() -> None:
     run_dir = RUNS / run_id
     run_adapter = run_dir / "adapter"
     run_dir.mkdir(parents=True)
-    # MLX-LM passes adapter_path to wandb.init(dir=...). Create it first so an
-    # explicitly enabled W&B run never prints a misleading missing-root warning.
     run_adapter.mkdir(parents=True)
     shutil.copy2(args.config, run_dir / "config.snapshot.yaml")
     manifest = {
@@ -113,7 +109,6 @@ def main() -> None:
         "base_model": str(MODEL.relative_to(ROOT)),
         "adapter": str(run_adapter.relative_to(ROOT)),
         "dataset": "local_ai/dataset",
-        "wandb_mode": args.wandb_mode,
         "platform": platform.platform(),
         "python": sys.version.split()[0],
         "started_at": datetime.now().isoformat(timespec="seconds"),
@@ -123,11 +118,9 @@ def main() -> None:
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
     env = os.environ.copy()
-    env.update({"WANDB_MODE": args.wandb_mode, "WANDB_DIR": str(run_dir), "PYTHONUNBUFFERED": "1"})
+    env.update({"PYTHONUNBUFFERED": "1"})
     common = [cli, "--config", str(args.config), "--model", str(MODEL), "--adapter-path", str(run_adapter)]
-    if args.wandb_mode != "disabled":
-        common += ["--report-to", "wandb", "--project-name", "resonance-lab-local-ai"]
-    print(f"\n[run] {run_id}\n[log] {run_dir / 'training.log'}\n[wandb] {args.wandb_mode}\n")
+    print(f"\n[run] {run_id}\n[log] {run_dir / 'training.log'}\n")
     code = stream(common, run_dir, env)
     if code == 0:
         # Do not reuse the training YAML here because it contains train: true.
