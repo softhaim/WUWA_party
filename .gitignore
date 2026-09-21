@@ -2,4 +2,10 @@ __pycache__/
 *.pyc
 roster.db
 .cache/
+.venv-ai/
+local_ai/checkpoints/
+local_ai/models/
+local_ai/runs/
+local_ai/dist/
+local_ai/adapters/*/checkpoints/
 .DS_Store

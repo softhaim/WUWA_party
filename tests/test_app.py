@@ -5,9 +5,23 @@ from pathlib import Path
 from unittest.mock import patch
 
 import server
+import local_chatbot
+from scripts.training_metrics import parse_metric
 
 
 class ResonanceLabTests(unittest.TestCase):
+    def test_training_log_parser_handles_terminal_period(self):
+        metric = parse_metric("Test loss 4.111, Test ppl 61.019.")
+        self.assertEqual(metric, {"type": "test", "loss": 4.111, "perplexity": 61.019})
+
+    def test_training_details_are_not_exposed_in_end_user_ui(self):
+        index = (server.STATIC / "index.html").read_text(encoding="utf-8")
+        app = (server.STATIC / "app.js").read_text(encoding="utf-8")
+        self.assertNotIn('id="trainingCard"', index)
+        self.assertNotIn("loadTrainingStatus", app)
+        self.assertNotIn("Qwen3 4B Instruct", index)
+        self.assertNotIn("모델 실행 중", index)
+
     def test_static_bundle_supports_direct_file_open(self):
         index = (server.STATIC / "index.html").read_text(encoding="utf-8")
         app = (server.STATIC / "app.js").read_text(encoding="utf-8")
@@ -21,6 +35,52 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn("configuration-tabs", app)
         self.assertIn("selectConfiguration", app)
         self.assertIn("data-config-panel", app)
+        self.assertIn('data-view="guide"', index)
+        self.assertIn('id="chatForm"', index)
+        self.assertIn("sendChat", app)
+
+    def test_chat_grounding_uses_roster_and_recommendation(self):
+        characters = server.load_characters()
+        rules = server.load_team_rules()
+        roster = {
+            cid: {"owned": True, "level": 90, "sequence": 0, "build_status": "완성", "max_uses": 1}
+            for cid in ("hiyuki", "lucilla", "chisa")
+        }
+        result = server.recommend({"roster": roster, "team_count": 1})
+        context, sources = local_chatbot.build_grounding("히유키 파티 추천해 줘", characters, rules, roster, result)
+        self.assertIn("히유키", context)
+        self.assertIn("루실라", context)
+        self.assertIn("현재 보유풀 추천 엔진 결과", context)
+        self.assertIn("내 보유풀 추천 계산", sources)
+
+    def test_chat_api_lets_model_reason_over_recommendation_context(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "sequence": 0, "build_status": "완성", "max_uses": 1}
+            for cid in ("hiyuki", "lucilla", "chisa")
+        }
+        with patch.object(local_chatbot.chatbot, "answer", return_value="히유키 조합을 우선 추천합니다.") as answer:
+            result = server.chat({"messages": [{"role": "user", "content": "내 파티 추천해 줘"}], "roster": roster, "team_count": 1})
+        self.assertIn("히유키", result["answer"])
+        answer.assert_called_once()
+        self.assertIn("현재 보유풀 추천 엔진 결과", answer.call_args.args[1])
+
+    def test_usage_question_applies_temporary_count_and_full_roster_context(self):
+        roster = server.get_roster()
+        original = roster["chisa"]["max_uses"]
+        with patch.object(local_chatbot.chatbot, "answer", return_value="치사는 두 고점 파티에 나눠 쓰는 편이 좋습니다.") as answer:
+            server.chat({"messages": [{"role": "user", "content": "치사를 2번 사용할 수 있을 때 내 파티풀에서는 어떻게 사용하는 게 좋아?"}], "roster": roster, "team_count": 3})
+        grounding = answer.call_args.args[1]
+        self.assertIn("치사 최대 사용 2회 가정", grounding)
+        self.assertIn("에이메스 / 데니아 / 치사", grounding)
+        self.assertIn("카르티시아 / 샤콘 / 치사", grounding)
+        self.assertEqual(roster["chisa"]["max_uses"], original)
+
+    def test_chat_api_passes_open_ended_character_context_to_local_model(self):
+        roster = {"hiyuki": {"owned": True, "level": 90, "sequence": 2, "build_status": "완성", "max_uses": 1}}
+        with patch.object(local_chatbot.chatbot, "answer", return_value="히유키는 공명 해방 중심 캐릭터입니다.") as answer:
+            result = server.chat({"messages": [{"role": "user", "content": "히유키의 장단점을 자유롭게 설명해줘"}], "roster": roster})
+        self.assertIn("공명 해방", result["answer"])
+        self.assertIn("히유키", answer.call_args.args[1])
 
     def test_catalog_is_valid_and_unique(self):
         characters = server.load_characters()

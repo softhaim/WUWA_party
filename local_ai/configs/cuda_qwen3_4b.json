@@ -1,0 +1,13 @@
+{
+  "base_model": "Qwen/Qwen3-4B-Instruct-2507",
+  "output_dir": "local_ai/adapters/qwen3-4b-cuda",
+  "epochs": 2,
+  "learning_rate": 0.00005,
+  "batch_size": 1,
+  "gradient_accumulation_steps": 8,
+  "max_length": 512,
+  "lora_rank": 8,
+  "lora_alpha": 16,
+  "lora_dropout": 0.05,
+  "seed": 20260921
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import mimetypes
+import re
 import ssl
 import sqlite3
 import urllib.request
@@ -740,6 +741,57 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def chat(payload: dict[str, Any]) -> dict[str, Any]:
+    from local_chatbot import apply_question_assumptions, build_grounding, chatbot, direct_answer
+
+    messages = payload.get("messages") or []
+    if not isinstance(messages, list) or not messages:
+        raise ValueError("질문을 입력해 주세요.")
+    question = str(messages[-1].get("content", "")).strip()
+    if not question:
+        raise ValueError("질문을 입력해 주세요.")
+    if len(question) > 2000:
+        raise ValueError("질문은 2,000자 이하로 입력해 주세요.")
+
+    roster = payload.get("roster") or get_roster()
+    characters = load_characters()
+    roster, assumption_notes = apply_question_assumptions(question, roster, characters)
+    owned_count = sum(bool(state.get("owned")) for state in roster.values())
+    wants_team_context = any(
+        keyword in question
+        for keyword in ("파티", "조합", "추천", "보유", "내 캐릭", "매트릭스", "배분", "고점", "육성")
+    )
+    recommendation = None
+    if wants_team_context and owned_count >= 3:
+        explicit_team_count = re.search(r"(\d+)\s*(?:개\s*)?파티", question)
+        is_usage_question = bool(assumption_notes) or any(keyword in question for keyword in ("사용 횟수", "몇 번", "어디에", "어떻게 사용"))
+        requested_count = int(explicit_team_count.group(1)) if explicit_team_count else ("all" if is_usage_question else payload.get("team_count", 3))
+        recommendation = recommend({"roster": roster, "team_count": requested_count})
+    rules = load_team_rules()
+    exact = direct_answer(question, recommendation, characters, rules, roster)
+    if exact:
+        answer, sources = exact
+        return {
+            "answer": answer,
+            "sources": sources,
+            "meta_patch": rules.get("meta_patch"),
+        }
+    grounding, sources = build_grounding(
+        question,
+        characters,
+        rules,
+        roster,
+        recommendation,
+        assumption_notes,
+    )
+    answer = chatbot.answer(messages, grounding)
+    return {
+        "answer": answer,
+        "sources": sources,
+        "meta_patch": rules.get("meta_patch"),
+    }
+
+
 class AppHandler(SimpleHTTPRequestHandler):
     def end_headers(self) -> None:
         # Allow the bundled index.html to work even when it was opened directly
@@ -821,9 +873,14 @@ class AppHandler(SimpleHTTPRequestHandler):
             if path == "/api/recommend":
                 self._json(recommend(payload))
                 return
+            if path == "/api/chat":
+                self._json(chat(payload))
+                return
             self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
         except (ValueError, KeyError, json.JSONDecodeError) as exc:
             self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except RuntimeError as exc:
+            self._json({"error": str(exc)}, HTTPStatus.SERVICE_UNAVAILABLE)
 
     def translate_path(self, path: str) -> str:
         clean = urlparse(path).path.lstrip("/") or "index.html"

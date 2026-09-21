@@ -1,4 +1,4 @@
-const state = { characters: [], roster: {}, filterElement: "", filterWeapon: "", filterRarity: "", filterRole: "", activeId: null, spineApp: null, spineLoading: null, nanokaSpineComponent: null, nanokaSpineModule: null, live2dRunId: 0 };
+const state = { characters: [], roster: {}, filterElement: "", filterWeapon: "", filterRarity: "", filterRole: "", activeId: null, spineApp: null, spineLoading: null, nanokaSpineComponent: null, nanokaSpineModule: null, live2dRunId: 0, chatMessages: [] };
 const COLORS = {응결:"#173849",용융:"#4c2520",전도:"#312548",기류:"#193d36",회절:"#4a4120",인멸:"#3d2545"};
 const ELEMENTS = ["응결","용융","전도","기류","회절","인멸"];
 const WEAPONS = ["대검","직검","권총","권갑","증폭기"];
@@ -15,7 +15,11 @@ async function api(path, options={}) {
   let response;
   try { response = await fetch(`${API_BASE}${path}`, {headers:{"Content-Type":"application/json"}, ...options}); }
   catch (_) { throw new Error("로컬 서버에 연결할 수 없습니다. python3 server.py 실행 상태를 확인해 주세요."); }
-  if (!response.ok) throw new Error(`로컬 API 오류: ${response.status}`);
+  if (!response.ok) {
+    let detail;
+    try{detail=await response.json();}catch(_){detail=null;}
+    throw new Error(detail?.error||`로컬 API 오류: ${response.status}`);
+  }
   return response.json();
 }
 
@@ -366,7 +370,27 @@ function selectConfiguration(index){
 }
 
 function toast(message){const el=$("#toast");el.textContent=message;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),1800);}
-function showView(view){const roster=view==="roster";$("#rosterView").hidden=!roster;$("#plannerView").hidden=roster;document.querySelectorAll(".nav-link").forEach(x=>x.classList.toggle("active",x.dataset.view===view));}
+function showView(view){
+  $("#rosterView").hidden=view!=="roster";$("#plannerView").hidden=view!=="planner";$("#guideView").hidden=view!=="guide";
+  document.querySelectorAll(".nav-link").forEach(x=>x.classList.toggle("active",x.dataset.view===view));
+}
+
+function chatMessage(role,content,meta=""){
+  const article=document.createElement("article");article.className=`chat-message ${role}`;
+  article.innerHTML=`<span class="avatar">${role==="assistant"?"R":"ME"}</span><div><p>${escapeHtml(content).replace(/\n/g,"<br>")}</p>${meta?`<small>${escapeHtml(meta)}</small>`:""}</div>`;
+  $("#chatMessages").appendChild(article);$("#chatMessages").scrollTop=$("#chatMessages").scrollHeight;return article;
+}
+
+async function sendChat(event){
+  event?.preventDefault();const input=$("#chatInput"),question=input.value.trim();if(!question)return;
+  input.value="";input.style.height="auto";state.chatMessages.push({role:"user",content:question});chatMessage("user",question);
+  const loading=chatMessage("assistant","보유풀과 대체 조합을 함께 비교하고 있어요…","조합 분석 중");$("#chatSend").disabled=true;
+  try{const result=await api("/api/chat",{method:"POST",body:JSON.stringify({messages:state.chatMessages,roster:state.roster,team_count:$("#teamCount").value})});loading.remove();state.chatMessages.push({role:"assistant",content:result.answer});chatMessage("assistant",result.answer,(result.sources||[]).join(" · ")||"앱 데이터");}
+  catch(error){loading.remove();chatMessage("assistant",error.message,"가이드를 사용할 수 없습니다");}
+  finally{$("#chatSend").disabled=false;input.focus();}
+}
+
+function resetChat(){state.chatMessages=[];$("#chatMessages").innerHTML="";chatMessage("assistant","안녕하세요. 내 보유 캐릭터를 기준으로 파티 구성과 육성 순서를 같이 살펴볼게요.","보유 데이터 · 메타 조합 기반");}
 
 async function init(){
   for(let i=0;i<=6;i++) $("#dialogSequence").insertAdjacentHTML("beforeend",`<option value="${i}">S${i}</option>`);
@@ -389,6 +413,11 @@ async function init(){
   ["#dialogSequence","#dialogLevel","#dialogBuild","#dialogUses","#dialogSignature","#dialogWeaponRank"].forEach(s=>$(s).addEventListener("input",markOwned));
   $("#maxLevel").addEventListener("click",()=>{$("#dialogLevel").value=90;markOwned();});
   document.querySelectorAll(".nav-link").forEach(x=>x.addEventListener("click",()=>showView(x.dataset.view)));
+  $("#chatForm").addEventListener("submit",sendChat);
+  $("#chatInput").addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendChat(event);}});
+  $("#chatInput").addEventListener("input",event=>{event.target.style.height="auto";event.target.style.height=`${Math.min(event.target.scrollHeight,140)}px`;});
+  $("#quickPrompts").addEventListener("click",event=>{const button=event.target.closest("button");if(!button)return;$("#chatInput").value=button.textContent;$("#chatInput").focus();});
+  $("#clearChat").addEventListener("click",resetChat);
 }
 
 init().catch(error=>{setSaveState("error","로컬 서버 연결 필요");$("#characterGrid").innerHTML=`<div class="empty">앱을 불러오지 못했습니다: ${escapeHtml(error.message)}<br><br>터미널에서 <b>python3 server.py</b>를 실행해 주세요.</div>`;console.error(error);});
