@@ -17,6 +17,7 @@ MLX_REPOSITORY = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
 TRANSFORMERS_REPOSITORY = "Qwen/Qwen3-4B-Instruct-2507"
 MLX_ADAPTER = ROOT / "local_ai" / "adapters" / "qwen3-4b-mlx"
 PEFT_ADAPTER = ROOT / "local_ai" / "adapters" / "qwen3-4b-cuda"
+BUNDLE_URL = "https://drive.google.com/file/d/1R_FOSyqjrUKm0ZYhfkTgQzqzOjQMx_Ls/view?usp=sharing"
 SYSTEM_PROMPT = """당신은 명조: 워더링 웨이브 전용 한국어 육성 도우미 '레조'다.
 반드시 아래 원칙을 지킨다.
 1. [현재 앱 데이터]에 있는 사실만 게임의 확정 정보처럼 말한다.
@@ -29,6 +30,12 @@ SYSTEM_PROMPT = """당신은 명조: 워더링 웨이브 전용 한국어 육성
 8. 질문 속 가정과 저장 설정을 구분하고, 임시 가정이 있으면 그 조건으로 추론한다.
 9. 질문한 캐릭터를 쓰지 않는 고점 파티는 열등한 파티가 아니라 해당 자원을 아끼는 대체안일 수 있다. 점수만 보고 뒤처진다고 단정하지 않는다.
 10. 답변은 결론, 추천 사용처, 그렇게 배분하는 이유까지만 완결된 문장으로 작성한다.
+11. 딜러·서브딜러·서포터 역할은 캐릭터 데이터의 역할 표기를 그대로 따른다. 딜러나 서브딜러를 '서포터'라고 부르지 않으며, 더 넓은 의미로 도와주는 파츠를 말할 때는 '지원 파츠'라고 구분한다.
+12. 파티 표에서 첫 번째 멤버는 대개 메인 딜러다. 이름의 나열 순서를 역할의 근거로 추측하지 않는다.
+13. 서포터 배분을 물으면 실제 서포터와 배정 파티를 먼저 간결하게 설명한다. 질문하지 않은 딜러·서브딜러 명단을 나열하거나 '서포터가 아니다'라는 당연한 문장을 덧붙이지 않는다.
+14. 앱 데이터는 근거이지 답변 서식이 아니다. 자료를 그대로 복사하지 말고 질문에 필요한 내용만 자연스럽게 요약한다.
+15. 자료에 없는 캐릭터 효과, 버프 종류, 보호 능력, 스킬 효과를 그럴듯하게 만들어내지 않는다.
+16. 대체 파티나 대체 파츠 자료가 제공되지 않았다면 대체 가능성을 추측하거나 상투적인 대체안 문장을 덧붙이지 않는다.
 """
 
 
@@ -105,41 +112,11 @@ def direct_answer(
     rules: dict[str, Any],
     roster: dict[str, dict[str, Any]],
 ) -> tuple[str, list[str]] | None:
-    """Answer facts that must never be delegated to a probabilistic model."""
+    """Answer only hard invariants that should not rely on probabilistic prose."""
     if "방랑자" in question and any(word in question for word in ("동시", "여러", "같이", "속성", "횟수")):
         return (
             "방랑자의 속성별 폼은 동시에 따로 사용할 수 없어요. 기류 방랑자를 한 번 사용하면 회절·인멸·전도 방랑자도 같은 방랑자 사용 슬롯에서 함께 1회 차감됩니다. 최대 사용 횟수를 2로 올린 경우에만 서로 다른 폼을 합쳐 총 2회까지 배치할 수 있어요.",
             ["방랑자 공유 사용 규칙"],
-        )
-    if "점수" in question and any(word in question for word in ("기준", "왜", "어떻게", "깎")):
-        return (
-            "파티 점수는 조합 완성도 44점, 최신 메타 가치 10점, 돌파·전용 무기 투자 33점, 실제 육성 상태 13점으로 계산해요. 최신 캐릭터라도 조합이 맞지 않으면 크게 깎이고, 예전 캐릭터도 고돌파·완성 육성이면 최신 저투자 파티보다 높아질 수 있어요.",
-            ["추천 점수 계산식"],
-        )
-    lowered = question.casefold()
-    mentioned = next(
-        (
-            character
-            for character in sorted(characters, key=lambda item: len(item["name_ko"]), reverse=True)
-            if character["name_ko"].casefold() in lowered or character.get("name", "").casefold() in lowered
-        ),
-        None,
-    )
-    if mentioned and any(word in question for word in ("기본", "정보", "육성", "방향", "어떤 캐릭")):
-        profile = rules.get("profiles", {}).get(mentioned["id"], {})
-        state = roster.get(mentioned["id"], {})
-        tags = profile.get("damage", []) or profile.get("provides", []) or profile.get("archetypes", [])
-        investment = (
-            f"현재 계정에서는 S{state.get('sequence', 0)}·Lv.{state.get('level', 1)}·{state.get('build_status', '미육성')}"
-            + (f"·전용 무기 R{state.get('weapon_rank', 1)}" if state.get("signature_weapon") else "")
-            if state.get("owned")
-            else "현재 계정에서는 미보유"
-        )
-        return (
-            f"{mentioned['name_ko']} 캐릭터는 {mentioned['element_ko']} 속성 {mentioned['weapon_ko']} {mentioned['role']}입니다. "
-            f"핵심 조합 태그는 {', '.join(tags) or mentioned['element_ko']}이고, {investment} 상태예요. "
-            "육성은 레벨과 핵심 스킬을 먼저 실전 가능 수준으로 맞추고, 실제 파티에서는 이 태그를 강화하는 검증된 파츠를 우선 배치하세요.",
-            ["캐릭터/보유 데이터", "메타 프로필"],
         )
     return None
 
@@ -208,14 +185,53 @@ def build_grounding(
         rows = []
         for team in recommendation["teams"]:
             names = " / ".join(member["name_ko"] for member in team["members"])
+            roles = " / ".join(
+                f"{member['name_ko']}={by_id.get(member['id'], {}).get('role', member.get('slot', '역할 미상'))}"
+                for member in team["members"]
+            )
             detail = team.get("score_details", {})
             rows.append(
                 f"- {names}: {team['score']}점, 육성완성도 {team.get('readiness', 0)}%, "
                 f"조합/최신/투자/육성={detail.get('composition', 0)}/{detail.get('meta', 0)}/"
-                f"{detail.get('investment', 0)}/{detail.get('build', 0)}; {team.get('reason', '')}"
+                f"{detail.get('investment', 0)}/{detail.get('build', 0)}; 역할={roles}; {team.get('reason', '')}"
             )
         sections.append("현재 보유풀 추천 엔진 결과:\n" + "\n".join(rows))
         sources.append("내 보유풀 추천 계산")
+
+        if "서포터" in question:
+            support_allocations: dict[str, list[str]] = {}
+            for team in recommendation["teams"]:
+                team_names = " / ".join(member["name_ko"] for member in team["members"])
+                for member in team["members"]:
+                    if by_id.get(member["id"], {}).get("role") == "서포터":
+                        profile = rules.get("profiles", {}).get(member["id"], {})
+                        provides = ",".join(profile.get("provides", [])) or "명시된 효과 없음"
+                        support_allocations.setdefault(member["name_ko"], []).append(
+                            f"{team_names} ({team['score']}점, 육성완성도 {team.get('readiness', 0)}%, 제공={provides})"
+                        )
+            if support_allocations:
+                support_rows = [
+                    f"- {name}: " + "; ".join(teams)
+                    for name, teams in support_allocations.items()
+                ]
+                sections.append(
+                    "서포터 배분 근거(캐릭터 데이터의 역할이 '서포터'인 멤버만 집계):\n"
+                    + "\n".join(support_rows)
+                    + "\n답변 작성 요구: 서포터별 배정 파티를 짧은 문단이나 글머리표로 요약하고, "
+                    "점수·육성·대체 가능성 중 실제 자료에 있는 핵심 이유만 덧붙인다. "
+                    "'제공'에 없는 버프·보호·피해 효과를 추측해서 만들지 않는다. "
+                    "딜러와 서브딜러 명단을 따로 나열하거나 그들이 서포터가 아니라고 설명하지 않는다."
+                )
+
+        if "점수" in question:
+            weights = recommendation.get("score_weights", {})
+            if weights:
+                sections.append(
+                    "추천 점수 가중치: "
+                    f"조합 {weights.get('composition', 0)}, 최신 메타 {weights.get('meta', 0)}, "
+                    f"돌파·전용 무기 투자 {weights.get('investment', 0)}, 육성 {weights.get('build', 0)}"
+                )
+                sources.append("추천 점수 계산식")
 
         if mentioned:
             focus_rows = []
@@ -285,7 +301,7 @@ def build_grounding(
 
     if not mentioned:
         owned = [
-            f"{by_id[cid]['name_ko']}(S{state.get('sequence', 0)},Lv.{state.get('level', 1)},{state.get('build_status', '미육성')})"
+            f"{by_id[cid]['name_ko']}({by_id[cid]['role']},S{state.get('sequence', 0)},Lv.{state.get('level', 1)},{state.get('build_status', '미육성')})"
             for cid, state in roster.items()
             if state.get("owned") and cid in by_id
         ]
@@ -311,6 +327,41 @@ class LocalChatbot:
         self._tokenizer: Any = None
         self._load_error: str | None = None
         self._lock = threading.Lock()
+
+    def status(self) -> dict[str, Any]:
+        """Report install readiness without loading multi-gigabyte weights."""
+        if self.backend == "mlx":
+            model_path = MLX_MODEL
+            adapter_ready = _adapter_ready(self.adapter_path)
+            dependencies = ("mlx_lm",)
+        else:
+            model_path = TRANSFORMERS_MODEL
+            adapter_ready = _peft_adapter_ready(self.adapter_path)
+            dependencies = ("torch", "transformers", "peft")
+        model_ready = (model_path / "config.json").is_file()
+        missing_dependencies = [name for name in dependencies if importlib.util.find_spec(name) is None]
+        ready = model_ready and adapter_ready and not missing_dependencies
+        missing = []
+        if not model_ready:
+            missing.append(f"{self.backend} 기본 모델")
+        if not adapter_ready:
+            missing.append("학습 어댑터")
+        if missing_dependencies:
+            missing.append("실행 패키지(" + ", ".join(missing_dependencies) + ")")
+        message = (
+            "AI 가이드를 사용할 수 있습니다."
+            if ready
+            else " · ".join(missing) + "이(가) 없습니다. 모델 번들 설치 또는 README의 직접 학습 절차를 진행해 주세요."
+        )
+        return {
+            "ready": ready,
+            "backend": self.backend,
+            "model_installed": model_ready,
+            "adapter_installed": adapter_ready,
+            "missing_dependencies": missing_dependencies,
+            "message": message,
+            "bundle_url": BUNDLE_URL,
+        }
 
     def _load_mlx(self) -> None:
         """Load the Apple Silicon 4-bit checkpoint and MLX LoRA."""

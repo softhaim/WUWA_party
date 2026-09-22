@@ -6,6 +6,7 @@ import mimetypes
 import re
 import ssl
 import sqlite3
+import urllib.error
 import urllib.request
 from datetime import datetime
 from http import HTTPStatus
@@ -13,7 +14,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from itertools import combinations
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 
 ROOT = Path(__file__).resolve().parent
@@ -21,6 +22,8 @@ STATIC = ROOT / "static"
 DATA = ROOT / "data"
 DB_PATH = ROOT / "roster.db"
 CACHE = ROOT / ".cache" / "characters"
+LIVE2D_CACHE = ROOT / ".cache" / "live2d-assets"
+LIVE2D_UPSTREAM = "https://static.nanoka.cc/assets/ww"
 ELEMENT_ORDER = {
     "응결": 0,
     "용융": 1,
@@ -73,7 +76,44 @@ def load_characters() -> list[dict[str, Any]]:
         character["detail_image"] = versioned_image_route("/api/detail-image", character["id"], character["detail_image_source"])
         character["element_icon"] = local_static_url(character.get("element_icon", ""))
         character["weapon_icon"] = local_static_url(character.get("weapon_icon", ""))
+        for field in ("live2d_skeleton_url", "live2d_atlas_url"):
+            source = character.get(field, "")
+            prefix = LIVE2D_UPSTREAM + "/"
+            if source.startswith(prefix):
+                character[field] = "/api/live2d-assets/" + source.removeprefix(prefix)
     return characters
+
+
+def live2d_asset(relative_path: str) -> tuple[bytes, str, bool]:
+    """Return a Nanoka Live2D asset through a persistent local disk cache.
+
+    Character artwork is bundled in ``static/``, but Spine skeletons, atlases,
+    and their textures are much larger. They are downloaded on first use into
+    the ignored ``.cache/live2d-assets`` directory and served locally after
+    that. The strict relative-path check prevents this proxy from becoming an
+    arbitrary URL fetcher or exposing files outside its cache directory.
+    """
+    relative = unquote(relative_path).lstrip("/")
+    if not relative or "\\" in relative:
+        raise OSError("Invalid Live2D asset path")
+    target = (LIVE2D_CACHE / relative).resolve()
+    if not target.is_relative_to(LIVE2D_CACHE.resolve()):
+        raise OSError("Live2D asset path escapes cache root")
+    cached = target.exists() and target.is_file()
+    if not cached:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        request = urllib.request.Request(
+            f"{LIVE2D_UPSTREAM}/{relative}",
+            headers={"User-Agent": "ResonanceLab/0.1 (+local Live2D cache)"},
+        )
+        context = ssl._create_unverified_context()
+        with urllib.request.urlopen(request, timeout=45, context=context) as response:
+            body = response.read()
+        temporary = target.with_suffix(target.suffix + ".part")
+        temporary.write_bytes(body)
+        temporary.replace(target)
+    content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+    return target.read_bytes(), content_type, cached
 
 
 def character_image(character_id: str, field: str = "image_source") -> tuple[bytes, str]:
@@ -735,6 +775,7 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
         "capacity_upper_bound": maximum_count,
         "message": f"메타와 사용 횟수를 반영해 {count_note} 파티의 서로 다른 배분안 {len(configurations)}가지를 계산했습니다.",
         "engine": "hybrid-meta-v2",
+        "score_weights": SCORE_WEIGHTS,
         "rules_version": rules["version"],
         "meta_patch": rules.get("meta_patch"),
         "meta_updated_at": rules.get("meta_updated_at"),
@@ -830,6 +871,25 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/health":
             self._json({"ok": True, "characters": len(load_characters())})
+            return
+        if path == "/api/ai/status":
+            from local_chatbot import chatbot
+
+            self._json(chatbot.status())
+            return
+        if path.startswith("/api/live2d-assets/"):
+            relative_path = path.removeprefix("/api/live2d-assets/")
+            try:
+                body, content_type, cached = live2d_asset(relative_path)
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+                self.send_header("X-Resonance-Cache", "HIT" if cached else "MISS")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (OSError, urllib.error.URLError):
+                self.send_error(HTTPStatus.NOT_FOUND)
             return
         if path.startswith("/api/image/"):
             character_id = path.removeprefix("/api/image/")

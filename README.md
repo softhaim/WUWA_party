@@ -35,22 +35,29 @@ Windows에서는 `python3` 대신 `py`를 사용할 수 있습니다. 실행 후
 
 ## AI 육성 가이드 설치
 
-동일한 웹 UI와 API를 사용하며 운영체제에 따라 다음 백엔드가 선택됩니다.
+AI 가이드는 운영체제에 맞는 실행 백엔드를 자동 선택합니다. 모델이 없거나 실행 패키지가 빠져 있으면 웹의 AI 가이드 화면에 설치 안내가 표시되며, 캐릭터 관리와 파티 플래너는 그대로 사용할 수 있습니다.
 
 | 환경 | 자동 선택 백엔드 | 학습 어댑터 |
 |---|---|---|
 | Apple Silicon Mac | MLX 4-bit | MLX LoRA |
 | Windows/Linux + NVIDIA GPU | Transformers 4-bit CUDA | PEFT LoRA |
-| Windows/Linux CPU | Transformers CPU | PEFT LoRA, 실행 가능하지만 느리고 메모리 사용량이 큼 |
+| Windows/Linux CPU | Transformers CPU | PEFT LoRA, 실행은 가능하지만 매우 느림 |
 
-[AI 모델 번들 다운로드](https://drive.google.com/file/d/1R_FOSyqjrUKm0ZYhfkTgQzqzOjQMx_Ls/view?usp=sharing)는 모든 환경에서 같은 파일을 사용합니다. 설치기는 현재 운영체제에 필요한 파일만 복사하고 MLX LoRA를 PEFT 형식으로도 변환합니다. 현재 링크의 번들에 Transformers 기본 모델이 없으면 Windows/Linux 설치 과정에서 Hugging Face 모델을 한 번 내려받습니다.
+[AI 모델 번들 다운로드](https://drive.google.com/file/d/1R_FOSyqjrUKm0ZYhfkTgQzqzOjQMx_Ls/view?usp=sharing)
+
+ZIP을 직접 풀 필요는 없습니다. 설치기가 체크섬을 검증한 뒤 다음 위치에 알아서 배치합니다.
+
+- 기본 모델: `local_ai/models/`
+- 학습된 LoRA: `local_ai/adapters/`
+
+현재 배포 ZIP이 MLX 기본 모델만 포함해도 학습 결과 자체는 다른 운영체제에서 사용할 수 있습니다. 설치기가 MLX LoRA를 Windows/Linux용 PEFT 형식으로 변환하고, 해당 플랫폼의 Transformers 기본 모델이 없으면 Hugging Face에서 자동으로 한 번 내려받습니다. 따라서 일반 설치에는 같은 ZIP을 쓰되 인터넷 연결이 필요할 수 있습니다. 인터넷 없이 모든 플랫폼에서 설치하려면 아래의 `universal` 번들을 사용해야 합니다.
 
 ### Apple Silicon Mac
 
 ```bash
 python3 -m venv .venv-ai
 .venv-ai/bin/python -m pip install -r requirements-ai-mlx.txt
-.venv-ai/bin/python scripts/install_model_bundle.py ~/Downloads/resonance-qwen3-4b-mlx-runtime.zip
+.venv-ai/bin/python scripts/install_model_bundle.py ~/Downloads/resonance-qwen3-4b-runtime.zip
 .venv-ai/bin/python server.py
 ```
 
@@ -62,8 +69,7 @@ python3 -m venv .venv-ai
 py -m venv .venv-ai
 .venv-ai\Scripts\activate
 python -m pip install -r requirements-ai-transformers.txt
-python scripts\install_model_bundle.py "%USERPROFILE%\Downloads\resonance-qwen3-4b-mlx-runtime.zip"
-python scripts\download_local_model.py --backend transformers
+python scripts\install_model_bundle.py "%USERPROFILE%\Downloads\resonance-qwen3-4b-runtime.zip"
 python server.py
 ```
 
@@ -73,16 +79,15 @@ Linux에서는 같은 PyTorch 설치 후 다음 명령을 사용합니다.
 python3 -m venv .venv-ai
 source .venv-ai/bin/activate
 python -m pip install -r requirements-ai-transformers.txt
-python scripts/install_model_bundle.py ~/Downloads/resonance-qwen3-4b-mlx-runtime.zip
-python scripts/download_local_model.py --backend transformers
+python scripts/install_model_bundle.py ~/Downloads/resonance-qwen3-4b-runtime.zip
 python server.py
 ```
 
-CUDA가 있으면 4-bit로 로드하고, 없으면 CPU로 실행합니다. CPU 모드는 Qwen3 4B 전체 가중치를 메모리에 올리므로 16GB 이상 RAM을 권장합니다.
+CUDA가 있으면 4-bit로 로드하고, 없으면 CPU로 실행합니다. CPU 모드는 Qwen3 4B 전체 가중치를 메모리에 올리므로 16GB 이상 RAM을 권장하지만 실사용은 NVIDIA GPU 환경을 권장합니다.
 
-### 번들 없이 모델 받기
+### ZIP을 받을 수 없을 때
 
-운영체제를 자동 감지해 호환되는 기본 모델을 받습니다.
+운영체제를 자동 감지해 호환되는 기본 모델을 Hugging Face에서 받을 수 있습니다. 학습 어댑터는 저장소의 `local_ai/adapters/`에 포함되어 있으므로, 일반적으로 다시 학습할 필요는 없습니다.
 
 ```bash
 python scripts/download_local_model.py
@@ -92,12 +97,17 @@ python scripts/download_local_model.py
 
 ## 직접 학습하기
 
+파티·캐릭터 데이터가 크게 바뀌었거나 답변 스타일을 직접 조정할 때만 재학습하면 됩니다. 학습 데이터는 `scripts/build_chat_dataset.py`가 `data/characters.json`과 `data/team_rules.json`을 읽어 `local_ai/dataset/`에 생성합니다. 캐릭터 이름을 답변 코드에 고정하는 방식이 아니라, 서비스 실행 시 추천 엔진이 현재 보유풀·역할·점수·대체 조합을 모델 컨텍스트로 전달합니다.
+
 ### Apple Silicon MLX
 
 ```bash
+.venv-ai/bin/python scripts/download_local_model.py --backend mlx
 .venv-ai/bin/python scripts/build_chat_dataset.py
 .venv-ai/bin/python scripts/train_chatbot.py
 ```
+
+완료된 어댑터는 `local_ai/adapters/qwen3-4b-mlx/`에 배포되고, 실행별 로그·손실·평가 보고서는 `local_ai/runs/<실행 시각>/`에 남습니다.
 
 ### Windows/Linux NVIDIA CUDA
 
@@ -123,7 +133,7 @@ python scripts/convert_mlx_adapter_to_peft.py
 
 ## 배포 번들 만들기
 
-현재 준비된 백엔드만 자동으로 묶습니다.
+현재 컴퓨터에 준비된 기본 모델과 최신 학습 어댑터를 묶습니다.
 
 ```bash
 python scripts/package_model_bundle.py
@@ -136,7 +146,7 @@ python scripts/download_local_model.py --backend all
 python scripts/package_model_bundle.py --runtime universal
 ```
 
-생성 파일은 `local_ai/dist/resonance-qwen3-4b-runtime.zip`입니다. 범용 번들은 두 모델 형식을 모두 포함하므로 용량이 큽니다. 일반 배포에서는 하나의 ZIP과 플랫폼별 자동 다운로드 방식을 권장합니다.
+생성 파일은 `local_ai/dist/resonance-qwen3-4b-runtime.zip`입니다. `universal` ZIP은 MLX와 Transformers 기본 가중치를 모두 포함하므로 크기가 매우 큽니다. 일반 배포는 작은 플랫폼 번들 하나와 설치기의 자동 다운로드 방식을 권장하고, 완전 오프라인 배포가 필요할 때만 범용 ZIP을 사용하세요.
 
 ## 테스트
 

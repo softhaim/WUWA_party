@@ -1,4 +1,4 @@
-const state = { characters: [], roster: {}, filterElement: "", filterWeapon: "", filterRarity: "", filterRole: "", activeId: null, spineApp: null, spineLoading: null, nanokaSpineComponent: null, nanokaSpineModule: null, live2dRunId: 0, chatMessages: [] };
+const state = { characters: [], roster: {}, filterElement: "", filterWeapon: "", filterRarity: "", filterRole: "", activeId: null, spineApp: null, spineLoading: null, nanokaSpineComponent: null, nanokaSpineModule: null, live2dRunId: 0, chatMessages: [], aiReady: true };
 const COLORS = {응결:"#173849",용융:"#4c2520",전도:"#312548",기류:"#193d36",회절:"#4a4120",인멸:"#3d2545"};
 const ELEMENTS = ["응결","용융","전도","기류","회절","인멸"];
 const WEAPONS = ["대검","직검","권총","권갑","증폭기"];
@@ -10,6 +10,37 @@ const SPINE_SCRIPTS = [
   "https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js",
   "https://cdn.jsdelivr.net/npm/pixi-spine@4.0.4/dist/pixi-spine.umd.js"
 ];
+const NANOKA_LIVE2D_PREFIX = "https://static.nanoka.cc/assets/ww/";
+
+function localLive2dUrl(value){
+  if(typeof value!=="string"||!value.startsWith(NANOKA_LIVE2D_PREFIX)) return value;
+  return `${API_BASE}/api/live2d-assets/${value.slice(NANOKA_LIVE2D_PREFIX.length)}`;
+}
+
+function installLive2dLocalCacheProxy(){
+  if(window.__resonanceLive2dProxyInstalled) return;
+  window.__resonanceLive2dProxyInstalled=true;
+  const nativeFetch=window.fetch.bind(window);
+  window.fetch=(input,options)=>nativeFetch(
+    typeof input==="string"?localLive2dUrl(input):input,
+    options
+  );
+  const nativeOpen=XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open=function(method,url,...rest){
+    return nativeOpen.call(this,method,localLive2dUrl(url),...rest);
+  };
+  const imageSrc=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,"src");
+  if(imageSrc?.set&&imageSrc.get){
+    Object.defineProperty(HTMLImageElement.prototype,"src",{
+      configurable:imageSrc.configurable,
+      enumerable:imageSrc.enumerable,
+      get:imageSrc.get,
+      set(value){imageSrc.set.call(this,localLive2dUrl(value));}
+    });
+  }
+}
+
+installLive2dLocalCacheProxy();
 
 async function api(path, options={}) {
   let response;
@@ -26,6 +57,12 @@ async function api(path, options={}) {
 function defaultRoster(id){return {character_id:id,owned:false,sequence:0,level:1,build_status:"미육성",max_uses:1,signature_weapon:false,weapon_rank:1};}
 function rosterOf(id){return state.roster[id] || (state.roster[id]=defaultRoster(id));}
 function escapeHtml(value){return String(value).replace(/[&<>'"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));}
+function formatChatContent(value){
+  return escapeHtml(value)
+    .replace(/\*\*([^*\n]+)\*\*/g,"<strong>$1</strong>")
+    .replace(/`([^`\n]+)`/g,"<code>$1</code>")
+    .replace(/\n/g,"<br>");
+}
 function setSaveState(mode,text){const el=$("#saveState");el.className=`save-state ${mode}`;el.querySelector("span").textContent=text;}
 function savedLabel(value){if(!value)return "SQLite 저장 준비됨";const d=new Date(value.includes("T")?value:`${value.replace(" ","T")}Z`);return `DB 저장 확인 · ${Number.isNaN(d.getTime())?value:d.toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`;}
 function markOwned(){ $("#dialogOwned").checked=true; }
@@ -377,12 +414,13 @@ function showView(view){
 
 function chatMessage(role,content,meta=""){
   const article=document.createElement("article");article.className=`chat-message ${role}`;
-  article.innerHTML=`<span class="avatar">${role==="assistant"?"R":"ME"}</span><div><p>${escapeHtml(content).replace(/\n/g,"<br>")}</p>${meta?`<small>${escapeHtml(meta)}</small>`:""}</div>`;
+  article.innerHTML=`<span class="avatar">${role==="assistant"?"R":"ME"}</span><div><p>${formatChatContent(content)}</p>${meta?`<small>${escapeHtml(meta)}</small>`:""}</div>`;
   $("#chatMessages").appendChild(article);$("#chatMessages").scrollTop=$("#chatMessages").scrollHeight;return article;
 }
 
 async function sendChat(event){
   event?.preventDefault();const input=$("#chatInput"),question=input.value.trim();if(!question)return;
+  if(!state.aiReady){$("#aiSetupNotice").hidden=false;return;}
   input.value="";input.style.height="auto";state.chatMessages.push({role:"user",content:question});chatMessage("user",question);
   const loading=chatMessage("assistant","보유풀과 대체 조합을 함께 비교하고 있어요…","조합 분석 중");$("#chatSend").disabled=true;
   try{const result=await api("/api/chat",{method:"POST",body:JSON.stringify({messages:state.chatMessages,roster:state.roster,team_count:$("#teamCount").value})});loading.remove();state.chatMessages.push({role:"assistant",content:result.answer});chatMessage("assistant",result.answer,(result.sources||[]).join(" · ")||"앱 데이터");}
@@ -392,9 +430,20 @@ async function sendChat(event){
 
 function resetChat(){state.chatMessages=[];$("#chatMessages").innerHTML="";chatMessage("assistant","안녕하세요. 내 보유 캐릭터를 기준으로 파티 구성과 육성 순서를 같이 살펴볼게요.","보유 데이터 · 메타 조합 기반");}
 
+function renderAiStatus(status){
+  state.aiReady=Boolean(status?.ready);
+  const notice=$("#aiSetupNotice"), input=$("#chatInput"), send=$("#chatSend");
+  notice.hidden=state.aiReady;
+  input.disabled=!state.aiReady;send.disabled=!state.aiReady;
+  if(!state.aiReady){
+    $("#aiSetupMessage").textContent=status?.message||"AI 모델 파일이 준비되지 않았습니다.";
+    input.placeholder="아래 안내에 따라 AI 모델을 먼저 설치해 주세요.";
+  }
+}
+
 async function init(){
   for(let i=0;i<=6;i++) $("#dialogSequence").insertAdjacentHTML("beforeend",`<option value="${i}">S${i}</option>`);
-  const [characters,roster,storage]=await Promise.all([api("/api/characters"),api("/api/roster"),api("/api/storage")]); state.characters=characters.map(c=>({...c,image:imageUrl(c.image),detail_image:imageUrl(c.detail_image),element_icon:imageUrl(c.element_icon),weapon_icon:imageUrl(c.weapon_icon)})); state.roster=roster;setSaveState("saved",savedLabel(storage.last_saved));
+  const [characters,roster,storage,aiStatus]=await Promise.all([api("/api/characters"),api("/api/roster"),api("/api/storage"),api("/api/ai/status")]); state.characters=characters.map(c=>({...c,image:imageUrl(c.image),detail_image:imageUrl(c.detail_image),element_icon:imageUrl(c.element_icon),weapon_icon:imageUrl(c.weapon_icon)})); state.roster=roster;setSaveState("saved",savedLabel(storage.last_saved));renderAiStatus(aiStatus);
   renderFilters();renderGrid();
   ["#searchInput","#ownedOnly"].forEach(s=>$(s).addEventListener("input",renderGrid));
   $("#filterPanel").addEventListener("click",e=>{

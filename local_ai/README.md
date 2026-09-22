@@ -29,6 +29,7 @@ local_chatbot.py
 | `runs/` | 실행별 로그, loss, 설정 사본과 HTML 보고서 | 아니요 |
 
 기본 모델은 용량 때문에 Git에서 제외합니다. LoRA만으로는 실행할 수 없으며 반드시 호환되는 기본 모델과 함께 사용합니다.
+`scripts/install_model_bundle.py`는 ZIP을 검증해 이 구조로 복사하고, 현재 운영체제용 기본 모델이 ZIP에 없으면 Hugging Face에서 자동으로 준비합니다. 모델·어댑터·필수 패키지 중 하나가 없으면 `/api/ai/status`와 웹 AI 가이드가 설치 필요 상태를 표시합니다.
 
 ## 추론 백엔드
 
@@ -63,6 +64,7 @@ MLX 학습은 터미널 출력과 함께 다음 파일을 남깁니다.
 - `report.html`: 로컬 손실 그래프
 
 성공한 실행만 서비스 어댑터 폴더로 복사됩니다. CUDA 학습은 `Trainer` 로그와 `test_metrics.json`을 PEFT 출력 폴더에 저장합니다.
+2026-09-22 MLX 재학습 실행은 validation loss `4.151 → 3.722`, test loss `3.738`을 기록했습니다. 실행별 수치는 Git에 포함되지 않는 `runs/` 보고서를 기준으로 확인하세요.
 
 ## 배포 ZIP
 

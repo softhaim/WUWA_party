@@ -7,6 +7,7 @@ import hashlib
 import json
 import platform
 import shutil
+import subprocess
 import sys
 import tempfile
 import zipfile
@@ -33,8 +34,9 @@ def sha256(path: Path) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Google Drive에서 받은 로컬 모델 번들 설치")
-    parser.add_argument("bundle", type=Path, help="resonance-qwen3-4b-mlx-runtime.zip 경로")
+    parser.add_argument("bundle", type=Path, help="다운로드한 resonance-qwen3-4b-runtime.zip 경로")
     parser.add_argument("--backend", choices=("auto", "mlx", "transformers", "all"), default="auto")
+    parser.add_argument("--no-download", action="store_true", help="번들에 현재 플랫폼 기본 모델이 없어도 자동 다운로드하지 않음")
     args = parser.parse_args()
     bundle = args.bundle.expanduser().resolve()
     if not bundle.is_file():
@@ -81,6 +83,22 @@ def main() -> None:
             print("[convert] Windows/Linux용 PEFT 어댑터도 준비했습니다.")
         except ModuleNotFoundError:
             print("[note] safetensors 설치 후 scripts/convert_mlx_adapter_to_peft.py를 실행하면 PEFT 어댑터를 만들 수 있습니다.")
+    required_models = {
+        "mlx": LOCAL_AI / "models" / "qwen3-4b-instruct-2507-mlx-4bit" / "config.json",
+        "transformers": LOCAL_AI / "models" / "qwen3-4b-instruct-2507-hf" / "config.json",
+    }
+    required = list(required_models) if selected == "all" else [selected]
+    missing_models = [backend for backend in required if not required_models[backend].is_file()]
+    if missing_models and not args.no_download:
+        backend = "all" if len(missing_models) > 1 else missing_models[0]
+        print(f"[download] 번들에 없는 {backend} 기본 모델을 Hugging Face에서 준비합니다.")
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "download_local_model.py"), "--backend", backend],
+            cwd=ROOT,
+            check=True,
+        )
+    elif missing_models:
+        print("[note] 기본 모델이 없습니다: " + ", ".join(missing_models))
     print(f"[done] {selected}용 모델과 LoRA 어댑터를 local_ai/ 아래에 설치했습니다.")
 
 

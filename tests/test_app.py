@@ -53,6 +53,14 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertNotIn("Qwen3 4B Instruct", index)
         self.assertNotIn("모델 실행 중", index)
 
+    def test_chat_ui_renders_safe_basic_markdown_and_missing_model_notice(self):
+        index = (server.STATIC / "index.html").read_text(encoding="utf-8")
+        app = (server.STATIC / "app.js").read_text(encoding="utf-8")
+        self.assertIn('id="aiSetupNotice"', index)
+        self.assertIn("formatChatContent", app)
+        self.assertIn('<strong>$1</strong>', app)
+        self.assertIn('api("/api/ai/status")', app)
+
     def test_static_bundle_supports_direct_file_open(self):
         index = (server.STATIC / "index.html").read_text(encoding="utf-8")
         app = (server.STATIC / "app.js").read_text(encoding="utf-8")
@@ -83,6 +91,97 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn("루실라", context)
         self.assertIn("현재 보유풀 추천 엔진 결과", context)
         self.assertIn("내 보유풀 추천 계산", sources)
+
+    def test_support_allocation_is_grounded_for_model_instead_of_hardcoded(self):
+        characters = server.load_characters()
+        rules = server.load_team_rules()
+        roster = {
+            cid: {"owned": True, "level": 90, "sequence": 0, "build_status": "완성", "max_uses": 1}
+            for cid in ("aemeath", "denia", "chisa", "hiyuki", "lucilla", "suisui")
+        }
+        recommendation = {
+            "teams": [
+                {"members": [{"id": "aemeath", "name_ko": "에이메스"}, {"id": "denia", "name_ko": "데니아"}, {"id": "chisa", "name_ko": "치사"}], "score": 98.4},
+                {"members": [{"id": "hiyuki", "name_ko": "히유키"}, {"id": "lucilla", "name_ko": "루실라"}, {"id": "suisui", "name_ko": "수수"}], "score": 95.3},
+            ]
+        }
+        context, sources = local_chatbot.build_grounding(
+            "현재 추천에서 핵심 서포터 배분을 설명해 줘",
+            characters,
+            rules,
+            roster,
+            recommendation,
+        )
+        self.assertIsNone(local_chatbot.direct_answer(
+            "현재 추천에서 핵심 서포터 배분을 설명해 줘", recommendation, characters, rules, roster
+        ))
+        self.assertIn("서포터 배분 근거", context)
+        self.assertIn("치사: 에이메스 / 데니아 / 치사", context)
+        self.assertIn("수수: 히유키 / 루실라 / 수수", context)
+        support_section = context.split("서포터 배분 근거", 1)[1]
+        self.assertNotIn("- 에이메스:", support_section)
+        self.assertIn("내 보유풀 추천 계산", sources)
+
+    def test_support_question_is_worded_by_local_model(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "sequence": 0, "build_status": "완성", "max_uses": 1}
+            for cid in ("aemeath", "denia", "chisa", "hiyuki", "lucilla", "suisui")
+        }
+        natural = "치사는 에이메스 파티에, 수수는 히유키 파티에 배정하는 구성이 좋아요."
+        with patch.object(local_chatbot.chatbot, "answer", return_value=natural) as answer:
+            result = server.chat({
+                "messages": [{"role": "user", "content": "현재 추천에서 핵심 서포터 배분을 설명해 줘"}],
+                "roster": roster,
+                "team_count": 2,
+            })
+        self.assertEqual(result["answer"], natural)
+        answer.assert_called_once()
+        self.assertIn("서포터 배분 근거", answer.call_args.args[1])
+
+    def test_future_support_character_is_grounded_without_new_answer_rule(self):
+        characters = server.load_characters()
+        characters.append({
+            "id": "future-support",
+            "name": "Future Support",
+            "name_ko": "미래서포터",
+            "element_ko": "회절",
+            "weapon_ko": "증폭기",
+            "role": "서포터",
+        })
+        rules = server.load_team_rules()
+        rules["profiles"]["future-support"] = {"provides": ["피해 증가"]}
+        roster = {
+            "aemeath": {"owned": True, "level": 90, "sequence": 0, "build_status": "완성"},
+            "denia": {"owned": True, "level": 90, "sequence": 0, "build_status": "완성"},
+            "future-support": {"owned": True, "level": 90, "sequence": 0, "build_status": "완성"},
+        }
+        recommendation = {"teams": [{
+            "members": [
+                {"id": "aemeath", "name_ko": "에이메스"},
+                {"id": "denia", "name_ko": "데니아"},
+                {"id": "future-support", "name_ko": "미래서포터"},
+            ],
+            "score": 97.0,
+            "readiness": 100,
+        }]}
+        context, _ = local_chatbot.build_grounding(
+            "현재 추천에서 핵심 서포터 배분을 설명해 줘", characters, rules, roster, recommendation
+        )
+        self.assertIn("미래서포터: 에이메스 / 데니아 / 미래서포터", context)
+        self.assertIn("제공=피해 증가", context)
+
+    def test_chat_grounding_includes_explicit_member_roles(self):
+        characters = server.load_characters()
+        rules = server.load_team_rules()
+        roster = {
+            cid: {"owned": True, "level": 90, "sequence": 0, "build_status": "완성", "max_uses": 1}
+            for cid in ("aemeath", "denia", "chisa")
+        }
+        result = server.recommend({"roster": roster, "team_count": 1})
+        context, _ = local_chatbot.build_grounding("현재 추천 설명해 줘", characters, rules, roster, result)
+        self.assertIn("에이메스=딜러", context)
+        self.assertIn("데니아=서브딜러", context)
+        self.assertIn("치사=서포터", context)
 
     def test_chat_api_lets_model_reason_over_recommendation_context(self):
         roster = {
@@ -119,6 +218,7 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertEqual(len({c["id"] for c in characters}), 58)
         self.assertTrue(all(c["image"].startswith("/api/image/") for c in characters))
         self.assertTrue(all(c["image_source"].startswith(("https://", "static/")) for c in characters))
+        self.assertTrue(all(c["live2d_skeleton_url"].startswith("/api/live2d-assets/") for c in characters))
 
     def test_xuanling_is_distinct_from_base_yangyang(self):
         characters = {character["id"]: character for character in server.load_characters()}

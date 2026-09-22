@@ -1,5 +1,5 @@
 {
-    "adapter_path": "/Users/ohjeonghwan/Documents/New project/local_ai/runs/20260921-113531-mlx-qwen3-4b/adapter",
+    "adapter_path": "/Users/ohjeonghwan/Documents/New project/local_ai/runs/20260922-103615-mlx-qwen3-4b/adapter",
     "batch_size": 1,
     "clear_cache_threshold": 0,
     "config": "/Users/ohjeonghwan/Documents/New project/local_ai/configs/mlx_qwen3_4b.yaml",
@@ -31,6 +31,8 @@
         "sgd": {},
         "adafactor": {}
     },
+    "project_name": null,
+    "report_to": null,
     "resume_adapter_file": null,
     "save_every": 10,
     "seed": 20260921,
