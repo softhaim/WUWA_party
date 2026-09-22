@@ -53,6 +53,12 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertNotIn("Qwen3 4B Instruct", index)
         self.assertNotIn("모델 실행 중", index)
 
+    def test_chat_requires_honorific_korean_and_readme_explains_bundle_location(self):
+        readme = (server.ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("모든 문장을 일관된 존댓말", local_chatbot.SYSTEM_PROMPT)
+        self.assertIn("프로젝트 안의 특정 폴더에 둘 필요가 없습니다", readme)
+        self.assertIn("ZIP의 실제 경로", readme)
+
     def test_chat_ui_renders_safe_basic_markdown_and_missing_model_notice(self):
         index = (server.STATIC / "index.html").read_text(encoding="utf-8")
         app = (server.STATIC / "app.js").read_text(encoding="utf-8")

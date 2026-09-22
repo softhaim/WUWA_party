@@ -30,6 +30,7 @@ local_chatbot.py
 
 기본 모델은 용량 때문에 Git에서 제외합니다. LoRA만으로는 실행할 수 없으며 반드시 호환되는 기본 모델과 함께 사용합니다.
 `scripts/install_model_bundle.py`는 ZIP을 검증해 이 구조로 복사하고, 현재 운영체제용 기본 모델이 ZIP에 없으면 Hugging Face에서 자동으로 준비합니다. 모델·어댑터·필수 패키지 중 하나가 없으면 `/api/ai/status`와 웹 AI 가이드가 설치 필요 상태를 표시합니다.
+번들 ZIP 자체는 프로젝트 내부에 둘 필요가 없습니다. 다운로드 폴더 등 임의의 읽기 가능한 위치에 둔 뒤 `python scripts/install_model_bundle.py <ZIP의 실제 경로>`로 설치하며, 압축은 설치기가 직접 풉니다.
 
 ## 추론 백엔드
 
