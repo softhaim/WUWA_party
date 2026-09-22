@@ -7,8 +7,6 @@ import os
 import re
 import ssl
 import sqlite3
-import subprocess
-import sys
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -42,47 +40,6 @@ SHARED_USAGE_GROUPS = {
     "rover-havoc": "rover",
     "rover-spectro": "rover",
 }
-
-
-def preferred_ai_python() -> Path | None:
-    """Find the project's prepared AI virtualenv when this Python lacks it."""
-    if os.environ.get("RESONANCE_NO_VENV_REEXEC", "").strip().lower() in {"1", "true", "yes", "on"}:
-        return None
-    windows = os.name == "nt"
-    candidate = ROOT / ".venv-ai" / ("Scripts/python.exe" if windows else "bin/python")
-    if not candidate.is_file():
-        return None
-    try:
-        # Virtualenv launchers commonly resolve to the same base interpreter;
-        # sys.prefix, not the executable symlink target, identifies activation.
-        if Path(sys.prefix).resolve() == (ROOT / ".venv-ai").resolve():
-            return None
-    except OSError:
-        pass
-    dependency = "mlx_lm" if sys.platform == "darwin" else "torch"
-    check = subprocess.run(
-        [str(candidate), "-c", f"import {dependency}"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=15,
-        check=False,
-    )
-    return candidate if check.returncode == 0 else None
-
-
-def use_preferred_ai_python() -> None:
-    """Re-launch through .venv-ai so `python server.py` remains intuitive."""
-    candidate = preferred_ai_python()
-    if candidate is None:
-        return
-    print(f"[ai] 준비된 실행 환경을 사용해요: {candidate}", flush=True)
-    environment = dict(os.environ)
-    environment["RESONANCE_NO_VENV_REEXEC"] = "1"
-    os.execve(
-        str(candidate),
-        [str(candidate), str(Path(__file__).resolve()), *sys.argv[1:]],
-        environment,
-    )
 
 
 def usage_key(character_id: str) -> str:
@@ -930,7 +887,7 @@ def chat(payload: dict[str, Any]) -> dict[str, Any]:
         build_grounding,
         chatbot,
         direct_answer,
-        format_verified_team_answer,
+        format_safe_planner_answer,
     )
 
     messages = payload.get("messages") or []
@@ -988,7 +945,7 @@ def chat(payload: dict[str, Any]) -> dict[str, Any]:
     )
     answer = chatbot.answer(messages, grounding)
     if recommendation and not answer_is_roster_safe(answer, question, recommendation, characters, roster):
-        answer = format_verified_team_answer(recommendation, requested_count=recommendation.get("requested_team_count"))
+        answer = format_safe_planner_answer(question, recommendation, characters, roster)
         sources = ["내 보유풀 추천 계산", "검증된 메타 파티 룰"]
     return {
         "answer": answer,
@@ -1115,7 +1072,6 @@ class AppHandler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    use_preferred_ai_python()
     init_db()
     mimetypes.add_type("text/javascript", ".js")
     if os.environ.get("RESONANCE_SKIP_LIVE2D_PRELOAD", "").strip().lower() not in {"1", "true", "yes", "on"}:

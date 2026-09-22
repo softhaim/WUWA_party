@@ -64,7 +64,7 @@ ZIP을 직접 풀지 마세요. 설치기가 체크섬을 검증한 뒤 압축 �
 - 기본 모델: `local_ai/models/`
 - 학습된 LoRA: `local_ai/adapters/`
 
-설치 완료 후 원본 ZIP은 더 이상 실행에 사용되지 않으므로 삭제하거나 다른 곳으로 옮겨도 돼요. 앱은 ZIP이 아니라 위 경로에 설치된 모델과 어댑터를 읽어요. 프로젝트에 `.venv-ai`가 준비되어 있다면 `python server.py`로 실행해도 해당 환경을 자동으로 선택하며, 자동 전환을 원하지 않을 때만 `RESONANCE_NO_VENV_REEXEC=1`을 설정할 수 있어요.
+설치 완료 후 원본 ZIP은 더 이상 실행에 사용되지 않으므로 삭제하거나 다른 곳으로 옮겨도 돼요. 앱은 ZIP이 아니라 위 경로에 설치된 모델과 어댑터를 읽어요. 가상환경 이름은 자유롭게 정할 수 있으며, AI 패키지를 설치한 환경을 활성화한 뒤 그 환경의 `python server.py`로 실행해 주세요.
 
 ZIP을 다른 곳에 두고 싶은 사용자는 기존처럼 경로를 직접 지정할 수도 있습니다. 예를 들어 Mac/Linux에서는 `python scripts/install_model_bundle.py /Users/me/AI/model.zip`, Windows에서는 `python scripts\install_model_bundle.py "D:\AI\model.zip"`처럼 실행합니다. 경로에 공백이 있으면 따옴표로 감싸세요. 설치가 성공한 뒤에는 원본 ZIP을 옮기거나 삭제해도 실행에 영향이 없습니다.
 

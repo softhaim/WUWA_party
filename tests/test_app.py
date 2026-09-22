@@ -71,19 +71,6 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn("ZIP을 다시 받을 필요는 없어요", status["message"])
         self.assertIn("실행 환경", status["setup_title"])
 
-    def test_server_finds_prepared_ai_virtualenv(self):
-        with tempfile.TemporaryDirectory() as temp_name:
-            root = Path(temp_name)
-            candidate = root / ".venv-ai" / "bin" / "python"
-            candidate.parent.mkdir(parents=True)
-            candidate.touch()
-            completed = types.SimpleNamespace(returncode=0)
-            with patch.object(server, "ROOT", root), patch.object(
-                server.sys, "prefix", "/usr/local"
-            ), patch.object(server.subprocess, "run", return_value=completed) as run:
-                self.assertEqual(server.preferred_ai_python(), candidate)
-            run.assert_called_once()
-
     def test_transformers_loader_pins_4bit_model_to_cuda_without_offload(self):
         captured = {}
 
@@ -243,9 +230,12 @@ class ResonanceLabTests(unittest.TestCase):
             roster,
             recommendation,
         )
-        self.assertIsNone(local_chatbot.direct_answer(
+        direct = local_chatbot.direct_answer(
             "현재 추천에서 핵심 서포터 배분을 설명해 줘", recommendation, characters, rules, roster
-        ))
+        )
+        self.assertIsNotNone(direct)
+        self.assertIn("치사 → 에이메스 / 데니아 / 치사", direct[0])
+        self.assertIn("수수 → 히유키 / 루실라 / 수수", direct[0])
         self.assertIn("서포터 배분 근거", context)
         self.assertIn("치사: 에이메스 / 데니아 / 치사", context)
         self.assertIn("수수: 히유키 / 루실라 / 수수", context)
@@ -253,21 +243,24 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertNotIn("- 에이메스:", support_section)
         self.assertIn("내 보유풀 추천 계산", sources)
 
-    def test_support_question_is_worded_by_local_model(self):
+    def test_support_question_returns_only_support_allocation_without_model_hallucination(self):
         roster = {
             cid: {"owned": True, "level": 90, "sequence": 0, "build_status": "완성", "max_uses": 1}
             for cid in ("aemeath", "denia", "chisa", "hiyuki", "lucilla", "suisui")
         }
-        natural = "치사는 에이메스 파티에, 수수는 히유키 파티에 배정하는 구성이 좋아요."
-        with patch.object(local_chatbot.chatbot, "answer", return_value=natural) as answer:
+        with patch.object(local_chatbot.chatbot, "answer") as answer:
             result = server.chat({
                 "messages": [{"role": "user", "content": "현재 추천에서 핵심 서포터 배분을 설명해 줘"}],
                 "roster": roster,
                 "team_count": 2,
             })
-        self.assertEqual(result["answer"], natural)
-        answer.assert_called_once()
-        self.assertIn("서포터 배분 근거", answer.call_args.args[1])
+        answer.assert_not_called()
+        self.assertIn("핵심 서포터", result["answer"])
+        self.assertIn("치사", result["answer"].splitlines()[0])
+        self.assertIn("수수", result["answer"].splitlines()[0])
+        self.assertIn("치사 → 에이메스 / 데니아 / 치사", result["answer"])
+        self.assertIn("수수 → 히유키 / 루실라 / 수수", result["answer"])
+        self.assertNotIn("고점 파티 2개는 아래", result["answer"])
 
     def test_future_support_character_is_grounded_without_new_answer_rule(self):
         characters = server.load_characters()
@@ -401,12 +394,13 @@ class ResonanceLabTests(unittest.TestCase):
     def test_usage_question_applies_temporary_count_and_full_roster_context(self):
         roster = server.get_roster()
         original = roster["chisa"]["max_uses"]
-        with patch.object(local_chatbot.chatbot, "answer", return_value="치사는 두 고점 파티에 나눠 쓰는 편이 좋습니다.") as answer:
-            server.chat({"messages": [{"role": "user", "content": "치사를 2번 사용할 수 있을 때 내 파티풀에서는 어떻게 사용하는 게 좋아?"}], "roster": roster, "team_count": 3})
-        grounding = answer.call_args.args[1]
-        self.assertIn("치사 최대 사용 2회 가정", grounding)
-        self.assertIn("에이메스 / 데니아 / 치사", grounding)
-        self.assertIn("카르티시아 / 샤콘 / 치사", grounding)
+        with patch.object(local_chatbot.chatbot, "answer") as answer:
+            result = server.chat({"messages": [{"role": "user", "content": "치사를 2번 사용할 수 있을 때 내 파티풀에서는 어떻게 사용하는 게 좋아?"}], "roster": roster, "team_count": 3})
+        answer.assert_not_called()
+        self.assertIn("치사 사용처는 2개 파티", result["answer"])
+        self.assertIn("에이메스 / 데니아 / 치사", result["answer"])
+        self.assertIn("카르티시아 / 샤콘 / 치사", result["answer"])
+        self.assertNotIn("현재 보유풀 기준 고점 파티 12개", result["answer"])
         self.assertEqual(roster["chisa"]["max_uses"], original)
 
     def test_chat_api_passes_open_ended_character_context_to_local_model(self):

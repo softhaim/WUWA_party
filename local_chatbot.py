@@ -154,6 +154,21 @@ def direct_answer(
             "최대 사용 횟수를 2로 올린 경우에만 서로 다른 폼을 합쳐 총 2회까지 배치할 수 있어요.",
             ["방랑자 공유 사용 규칙"],
         )
+    if recommendation and "서포터" in question and any(word in question for word in ("핵심", "배분", "설명", "추천")):
+        return (
+            format_support_allocation_answer(recommendation, characters),
+            ["내 보유풀 추천 계산", "캐릭터 역할 데이터"],
+        )
+    usage_words = ("사용 횟수", "몇 번", "어디에", "어떻게 사용", "사용 가능")
+    mentioned = [
+        character for character in characters
+        if character["name_ko"] in question or character.get("name", "") in question
+    ]
+    if recommendation and mentioned and any(word in question for word in usage_words):
+        return (
+            format_character_usage_answer(recommendation, mentioned, roster),
+            ["내 보유풀 추천 계산", "질문 속 사용 횟수 조건"],
+        )
     explicit_count = re.search(
         r"(\d+)\s*(?:개\s*)?(?:(?:고점|최고|메타|강한|강력한)\s*)?(?:파티|조합)",
         question,
@@ -171,6 +186,84 @@ def direct_answer(
             ["내 보유풀 추천 계산", "검증된 메타 파티 룰"],
         )
     return None
+
+
+def _team_reason(team: dict[str, Any]) -> str:
+    return str(team.get("reason", "검증된")).removeprefix("메타 조합 · ").removesuffix(" 조합")
+
+
+def format_support_allocation_answer(
+    recommendation: dict[str, Any],
+    characters: list[dict[str, Any]],
+) -> str:
+    """Explain only actual support-role allocations from the current plan."""
+    by_id = {character["id"]: character for character in characters}
+    allocations: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for team in recommendation.get("teams", []):
+        for member in team.get("members", []):
+            role = by_id.get(member["id"], {}).get("role", member.get("role"))
+            if role == "서포터":
+                allocations.append((member, team))
+    if not allocations:
+        return "**현재 추천 파티에는 역할이 서포터인 캐릭터가 배정되지 않았어요.**"
+    support_names = ", ".join(dict.fromkeys(member["name_ko"] for member, _ in allocations))
+    rows = []
+    for support, team in allocations:
+        names = " / ".join(member["name_ko"] for member in team.get("members", []))
+        readiness = team.get("readiness")
+        build = f", 육성 완성도 {readiness}%" if readiness is not None else ""
+        rows.append(
+            f"- **{support['name_ko']} → {names}** — {team.get('score', 0)}점{build}\n"
+            f"  {_team_reason(team)} 조합의 서포터 슬롯이에요."
+        )
+    return f"**현재 추천의 핵심 서포터는 {support_names}예요.**\n\n" + "\n\n".join(rows)
+
+
+def format_character_usage_answer(
+    recommendation: dict[str, Any],
+    mentioned: list[dict[str, Any]],
+    roster: dict[str, dict[str, Any]],
+) -> str:
+    """Answer a usage-allocation question without dumping unrelated teams."""
+    focus_ids = {character["id"] for character in mentioned}
+    focus_name = "·".join(character["name_ko"] for character in mentioned)
+    assigned = [
+        team for team in recommendation.get("teams", [])
+        if any(member["id"] in focus_ids for member in team.get("members", []))
+    ]
+    max_uses = max((int(roster.get(cid, {}).get("max_uses", 1)) for cid in focus_ids), default=1)
+    if not assigned:
+        return (
+            f"**현재 전체 고점 배분에서 {focus_name} 배정은 제외돼요.**\n\n"
+            "사용 횟수가 남더라도 다른 완성 파티를 깨면서 억지로 넣지는 않았어요."
+        )
+    intro = f"**현재 추천에서 {focus_name} 사용처는 {len(assigned)}개 파티예요.**"
+    rows = []
+    for team in assigned:
+        names = " / ".join(member["name_ko"] for member in team.get("members", []))
+        rows.append(f"- **{names}** — {team.get('score', 0)}점\n  {_team_reason(team)} 조합이에요.")
+    note = ""
+    if len(assigned) < max_uses:
+        note = f"\n\n최대 {max_uses}회까지 가능하지만, 현재 조합 품질을 유지하면 {len(assigned)}회만 쓰는 편이 좋아요."
+    return intro + "\n\n" + "\n\n".join(rows) + note
+
+
+def format_safe_planner_answer(
+    question: str,
+    recommendation: dict[str, Any],
+    characters: list[dict[str, Any]],
+    roster: dict[str, dict[str, Any]],
+) -> str:
+    """Choose a factual fallback that preserves the user's actual intent."""
+    if "서포터" in question:
+        return format_support_allocation_answer(recommendation, characters)
+    mentioned = [
+        character for character in characters
+        if character["name_ko"] in question or character.get("name", "") in question
+    ]
+    if mentioned and any(word in question for word in ("사용 횟수", "몇 번", "어디에", "어떻게 사용", "사용 가능")):
+        return format_character_usage_answer(recommendation, mentioned, roster)
+    return format_verified_team_answer(recommendation, requested_count=recommendation.get("requested_team_count"))
 
 
 def format_verified_team_answer(
@@ -491,7 +584,8 @@ class LocalChatbot:
             message = (
                 "모델과 학습 어댑터는 이미 설치되어 있어요. 현재 서버를 실행한 Python에 "
                 + ", ".join(missing_dependencies)
-                + f" 패키지가 없어요. `.venv-ai` 환경으로 서버를 실행하거나 `{package}`를 설치해 주세요. ZIP을 다시 받을 필요는 없어요."
+                + f" 패키지가 없어요. AI 패키지를 설치한 가상환경을 활성화해 서버를 실행하거나 `{package}`를 설치해 주세요. "
+                "가상환경 이름은 자유롭게 정할 수 있고 ZIP을 다시 받을 필요는 없어요."
             )
             setup_title = "AI 실행 환경을 확인해 주세요"
         else:
@@ -639,7 +733,7 @@ class LocalChatbot:
             self._tokenizer,
             prompt=prompt,
             max_tokens=360,
-            sampler=make_sampler(temp=0.1, top_p=0.85),
+            sampler=make_sampler(temp=0.0),
             verbose=False,
         )
 
@@ -653,9 +747,7 @@ class LocalChatbot:
             output = self._model.generate(
                 **inputs,
                 max_new_tokens=360,
-                do_sample=True,
-                temperature=0.1,
-                top_p=0.85,
+                do_sample=False,
                 pad_token_id=self._tokenizer.eos_token_id,
             )
         generated = output[0, inputs["input_ids"].shape[1] :]
