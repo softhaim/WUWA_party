@@ -33,7 +33,7 @@ python3 server.py
 
 Windows에서는 `python3` 대신 `py`를 사용할 수 있습니다. 실행 후 [http://127.0.0.1:8000](http://127.0.0.1:8000)을 열면 됩니다. 캐릭터 설정은 `roster.db`에 저장됩니다.
 
-서버를 처음 실행할 때 전체 캐릭터의 Live2D 골격·아틀라스·텍스처를 `.cache/live2d-assets/`에 미리 저장해요. 준비가 끝난 뒤 웹 서버가 열리므로 첫 캐릭터를 눌렀을 때도 원격 다운로드를 기다리지 않고 바로 로컬 파일을 사용해요. 이후 실행에서는 저장된 파일을 확인만 하며, 자동 준비를 생략해야 하는 특수한 환경에서는 `RESONANCE_SKIP_LIVE2D_PRELOAD=1`을 설정할 수 있어요.
+서버를 처음 실행할 때 전체 캐릭터의 Live2D 골격·아틀라스·텍스처를 `.cache/live2d-assets/`에 미리 저장합니다. 준비가 끝난 뒤 웹 서버가 열리므로 첫 캐릭터를 눌렀을 때도 원격 다운로드를 기다리지 않고 바로 로컬 파일을 사용해요. 이후 실행에서는 저장된 파일을 확인만 하며, 자동 준비를 생략해야 하는 특수한 환경에서는 `RESONANCE_SKIP_LIVE2D_PRELOAD=1`을 설정할 수 있습니다.
 
 ## AI 육성 가이드 설치
 
@@ -64,7 +64,7 @@ ZIP을 직접 풀지 마세요. 설치기가 체크섬을 검증한 뒤 압축 �
 - 기본 모델: `local_ai/models/`
 - 학습된 LoRA: `local_ai/adapters/`
 
-설치 완료 후 원본 ZIP은 더 이상 실행에 사용되지 않으므로 삭제하거나 다른 곳으로 옮겨도 돼요. 앱은 ZIP이 아니라 위 경로에 설치된 모델과 어댑터를 읽어요. 가상환경 이름은 자유롭게 정할 수 있으며, AI 패키지를 설치한 환경을 활성화한 뒤 그 환경의 `python server.py`로 실행해 주세요.
+설치 완료 후 원본 ZIP은 더 이상 실행에 사용되지 않으므로 삭제하거나 다른 곳으로 옮겨도 됩니다. 앱은 ZIP이 아니라 위 경로에 설치된 모델과 어댑터를 읽습니다. 가상환경 이름은 자유롭게 정할 수 있으며, AI 패키지를 설치한 환경을 활성화한 뒤 그 환경의 `python server.py`로 실행해 주세요. 예시에서는 ".venv-ai" 로 이름을 설정하고 진행합니다.
 
 ZIP을 다른 곳에 두고 싶은 사용자는 기존처럼 경로를 직접 지정할 수도 있습니다. 예를 들어 Mac/Linux에서는 `python scripts/install_model_bundle.py /Users/me/AI/model.zip`, Windows에서는 `python scripts\install_model_bundle.py "D:\AI\model.zip"`처럼 실행합니다. 경로에 공백이 있으면 따옴표로 감싸세요. 설치가 성공한 뒤에는 원본 ZIP을 옮기거나 삭제해도 실행에 영향이 없습니다.
 
@@ -81,7 +81,7 @@ python3 -m venv .venv-ai
 
 ### Windows/Linux + NVIDIA GPU
 
-먼저 [PyTorch 설치 선택기](https://pytorch.org/get-started/locally/)에서 운영체제와 CUDA 버전에 맞는 명령을 선택해 **현재 가상환경에 CUDA용 PyTorch를 설치**해 주세요. PC에 NVIDIA 드라이버나 CUDA Toolkit만 설치되어 있어도 Python 환경에 CPU용 PyTorch가 들어 있으면 GPU를 사용할 수 없어요.
+먼저 [PyTorch 설치 선택기](https://pytorch.org/get-started/locally/)에서 운영체제와 CUDA 버전에 맞는 명령을 선택해 **현재 가상환경에 CUDA용 PyTorch를 설치**해 주세요. PC에 NVIDIA 드라이버나 CUDA Toolkit만 설치되어 있어도 Python 환경에 CPU용 PyTorch가 들어 있으면 GPU를 사용할 수 없습니다.
 
 ```powershell
 py -m venv .venv-ai
@@ -113,13 +113,13 @@ python -c "import torch; print(torch.__version__); print(torch.version.cuda); pr
 None
 False
 ```
-과 같이 뜬다면 CPU용 torch를 지우고 CUDA wheel로 다시 설치해야 합니다. 예를 들어 CUDA 12.6 계열을 쓰려면:
+과 같이 뜬다면 CPU용 torch를 지우고 CUDA wheel로 다시 설치해야 합니다.
 ```bash
 pip uninstall torch torchvision torchaudio -y
 ```
 를 하여 제거 후 다시 PyTorch를 설치를 해보세요.
 
-이제 Windows/Linux 추론은 `bitsandbytes` NF4 4-bit 모델 전체를 선택한 GPU에 고정해요. CUDA 또는 4-bit 패키지가 준비되지 않으면 RAM으로 조용히 전환하지 않고 AI 가이드 화면과 터미널에 원인을 표시해요. 여러 GPU 중 다른 장치를 쓰려면 서버 실행 전에 `RESONANCE_CUDA_DEVICE`를 해당 GPU 번호로 설정할 수 있어요.
+이제 Windows/Linux 추론은 `bitsandbytes` NF4 4-bit 모델 전체를 선택한 GPU에 고정합니다. CUDA 또는 4-bit 패키지가 준비되지 않으면 RAM으로 조용히 전환하지 않고 AI 가이드 화면과 터미널에 원인을 표시합니다. 여러 GPU 중 다른 장치를 쓰려면 서버 실행 전에 `RESONANCE_CUDA_DEVICE`를 해당 GPU 번호로 설정할 수 있습니다.
 
 Linux에서는 같은 PyTorch 설치 후 다음 명령을 사용합니다.
 
