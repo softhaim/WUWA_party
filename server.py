@@ -7,6 +7,8 @@ import os
 import re
 import ssl
 import sqlite3
+import subprocess
+import sys
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -40,6 +42,47 @@ SHARED_USAGE_GROUPS = {
     "rover-havoc": "rover",
     "rover-spectro": "rover",
 }
+
+
+def preferred_ai_python() -> Path | None:
+    """Find the project's prepared AI virtualenv when this Python lacks it."""
+    if os.environ.get("RESONANCE_NO_VENV_REEXEC", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return None
+    windows = os.name == "nt"
+    candidate = ROOT / ".venv-ai" / ("Scripts/python.exe" if windows else "bin/python")
+    if not candidate.is_file():
+        return None
+    try:
+        # Virtualenv launchers commonly resolve to the same base interpreter;
+        # sys.prefix, not the executable symlink target, identifies activation.
+        if Path(sys.prefix).resolve() == (ROOT / ".venv-ai").resolve():
+            return None
+    except OSError:
+        pass
+    dependency = "mlx_lm" if sys.platform == "darwin" else "torch"
+    check = subprocess.run(
+        [str(candidate), "-c", f"import {dependency}"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=15,
+        check=False,
+    )
+    return candidate if check.returncode == 0 else None
+
+
+def use_preferred_ai_python() -> None:
+    """Re-launch through .venv-ai so `python server.py` remains intuitive."""
+    candidate = preferred_ai_python()
+    if candidate is None:
+        return
+    print(f"[ai] 준비된 실행 환경을 사용해요: {candidate}", flush=True)
+    environment = dict(os.environ)
+    environment["RESONANCE_NO_VENV_REEXEC"] = "1"
+    os.execve(
+        str(candidate),
+        [str(candidate), str(Path(__file__).resolve()), *sys.argv[1:]],
+        environment,
+    )
 
 
 def usage_key(character_id: str) -> str:
@@ -912,6 +955,9 @@ def chat(payload: dict[str, Any]) -> dict[str, Any]:
         explicit_team_count = re.search(
             r"(\d+)\s*(?:개\s*)?(?:(?:고점|최고|메타|강한|강력한)\s*)?(?:파티|조합)",
             question,
+        ) or re.search(
+            r"(?:(?:고점|최고|메타|강한|강력한)\s*)?(?:파티|조합)\s*(\d+)\s*개",
+            question,
         )
         high_point_request = bool(explicit_team_count) or any(
             keyword in question for keyword in ("고점", "최고", "메타", "강한", "강력")
@@ -1069,6 +1115,7 @@ class AppHandler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
+    use_preferred_ai_python()
     init_db()
     mimetypes.add_type("text/javascript", ".js")
     if os.environ.get("RESONANCE_SKIP_LIVE2D_PRELOAD", "").strip().lower() not in {"1", "true", "yes", "on"}:

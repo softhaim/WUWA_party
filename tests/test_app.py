@@ -58,6 +58,32 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertTrue(status["ready"])
         self.assertEqual(status["runtime"]["gpu_name"], "Test GPU")
 
+    def test_installed_model_without_runtime_package_does_not_request_zip_again(self):
+        bot = local_chatbot.LocalChatbot("mlx")
+        with patch.object(
+            local_chatbot.importlib.util, "find_spec", return_value=None
+        ), patch.object(Path, "is_file", return_value=True), patch.object(
+            local_chatbot, "_adapter_ready", return_value=True
+        ):
+            status = bot.status()
+        self.assertFalse(status["ready"])
+        self.assertFalse(status["bundle_required"])
+        self.assertIn("ZIP을 다시 받을 필요는 없어요", status["message"])
+        self.assertIn("실행 환경", status["setup_title"])
+
+    def test_server_finds_prepared_ai_virtualenv(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            candidate = root / ".venv-ai" / "bin" / "python"
+            candidate.parent.mkdir(parents=True)
+            candidate.touch()
+            completed = types.SimpleNamespace(returncode=0)
+            with patch.object(server, "ROOT", root), patch.object(
+                server.sys, "prefix", "/usr/local"
+            ), patch.object(server.subprocess, "run", return_value=completed) as run:
+                self.assertEqual(server.preferred_ai_python(), candidate)
+            run.assert_called_once()
+
     def test_transformers_loader_pins_4bit_model_to_cuda_without_offload(self):
         captured = {}
 
@@ -147,6 +173,7 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn("친근한 존댓말", local_chatbot.SYSTEM_PROMPT)
         self.assertIn("local_ai/bundles/", readme)
         self.assertIn("ZIP 경로는 쓰지 않아도 됩니다", readme)
+        self.assertIn("설치 완료 후 원본 ZIP은 더 이상 실행에 사용되지", readme)
 
     def test_model_installer_discovers_default_bundle_without_path(self):
         with tempfile.TemporaryDirectory() as temp_name:
@@ -315,8 +342,13 @@ class ResonanceLabTests(unittest.TestCase):
                 "messages": [{"role": "user", "content": "내 보유풀에서 5개 고점 파티 추천해 줘"}],
                 "roster": roster,
             })
+            quick_result = server.chat({
+                "messages": [{"role": "user", "content": "내 보유풀로 고점 파티 3개 추천해 줘"}],
+                "roster": roster,
+            })
         answer.assert_not_called()
         self.assertIn("에이메스 / 데니아 / 치사", result["answer"])
+        self.assertIn("고점 파티 3개", quick_result["answer"])
         self.assertNotIn("카르티시아 / 산화", result["answer"])
         self.assertNotIn("금희 / 린네", result["answer"])
         owned_names = {

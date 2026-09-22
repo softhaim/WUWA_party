@@ -51,9 +51,9 @@
         <div class="chat-shell">
           <div class="chat-head"><div><span class="bot-mark">R</span><div><strong>레조</strong><small>명조 육성 가이드</small></div></div><button type="button" id="clearChat">대화 초기화</button></div>
           <div class="ai-setup-notice" id="aiSetupNotice" hidden>
-            <strong>AI 모델 설치가 필요합니다</strong>
+            <strong id="aiSetupTitle">AI 모델 설치가 필요해요</strong>
             <p id="aiSetupMessage">로컬 모델 파일이 준비되지 않았습니다.</p>
-            <div><a href="https://drive.google.com/drive/folders/1TcNuDnVOnchhMmfK9phJ_TMabgfWhUC8?usp=sharing" target="_blank" rel="noreferrer">모델 번들 받기</a><a href="https://github.com/softhaim/WUWA_party#ai-육성-가이드-설치" target="_blank" rel="noreferrer">설치·직접 학습 안내</a></div>
+            <div><a id="aiBundleLink" href="https://drive.google.com/drive/folders/1TcNuDnVOnchhMmfK9phJ_TMabgfWhUC8?usp=sharing" target="_blank" rel="noreferrer">모델 번들 받기</a><a href="https://github.com/softhaim/WUWA_party#ai-육성-가이드-설치" target="_blank" rel="noreferrer">설치·실행 안내</a></div>
           </div>
           <div class="chat-messages" id="chatMessages" aria-live="polite"><article class="chat-message assistant"><span class="avatar">R</span><div><p>안녕하세요. 내 보유 캐릭터를 기준으로 파티 구성과 육성 순서를 같이 살펴볼게요.</p><small>보유 데이터 · 메타 조합 기반</small></div></article></div>
           <form class="chat-compose" id="chatForm"><textarea id="chatInput" rows="1" maxlength="2000" placeholder="예: 치사를 한 번만 쓸 수 있을 때 어디에 배치해야 해?"></textarea><button type="submit" id="chatSend" aria-label="전송">↑</button></form>
@@ -78,6 +78,6 @@
     </form>
   </dialog>
   <div class="toast" id="toast" role="status"></div>
-  <script src="./app.js?v=20260922-friendly-guide" defer></script>
+  <script src="./app.js?v=20260923-runtime-detect" defer></script>
 </body>
 </html>

@@ -157,6 +157,9 @@ def direct_answer(
     explicit_count = re.search(
         r"(\d+)\s*(?:개\s*)?(?:(?:고점|최고|메타|강한|강력한)\s*)?(?:파티|조합)",
         question,
+    ) or re.search(
+        r"(?:(?:고점|최고|메타|강한|강력한)\s*)?(?:파티|조합)\s*(\d+)\s*개",
+        question,
     )
     if (
         recommendation
@@ -479,16 +482,28 @@ class LocalChatbot:
                 missing.append("PyTorch CUDA 연결")
             elif not runtime.get("bitsandbytes_installed"):
                 missing.append("bitsandbytes 4-bit 패키지")
-        message = (
-            "AI 가이드를 사용할 수 있습니다."
-            if ready
-            else " · ".join(missing) + "이(가) 없습니다. 모델 번들 설치 또는 README의 직접 학습 절차를 진행해 주세요."
-        )
+        bundle_required = not model_ready or not adapter_ready
+        if ready:
+            message = "AI 가이드를 사용할 수 있습니다."
+            setup_title = "AI 가이드 준비 완료"
+        elif not bundle_required and missing_dependencies:
+            package = "requirements-ai-mlx.txt" if self.backend == "mlx" else "requirements-ai-transformers.txt"
+            message = (
+                "모델과 학습 어댑터는 이미 설치되어 있어요. 현재 서버를 실행한 Python에 "
+                + ", ".join(missing_dependencies)
+                + f" 패키지가 없어요. `.venv-ai` 환경으로 서버를 실행하거나 `{package}`를 설치해 주세요. ZIP을 다시 받을 필요는 없어요."
+            )
+            setup_title = "AI 실행 환경을 확인해 주세요"
+        else:
+            message = " · ".join(missing) + "이(가) 없습니다. 모델 번들을 설치해 주세요."
+            setup_title = "AI 모델 설치가 필요해요"
         return {
             "ready": ready,
             "backend": self.backend,
             "model_installed": model_ready,
             "adapter_installed": adapter_ready,
+            "bundle_required": bundle_required,
+            "setup_title": setup_title,
             "missing_dependencies": missing_dependencies,
             "message": message,
             "bundle_url": BUNDLE_URL,

@@ -443,8 +443,10 @@ function renderAiStatus(status){
   notice.hidden=state.aiReady;
   input.disabled=!state.aiReady;send.disabled=!state.aiReady;
   if(!state.aiReady){
+    $("#aiSetupTitle").textContent=status?.setup_title||"AI 실행 환경을 확인해 주세요";
     $("#aiSetupMessage").textContent=status?.message||"AI 모델 파일이 준비되지 않았습니다.";
-    input.placeholder="아래 안내에 따라 AI 모델을 먼저 설치해 주세요.";
+    $("#aiBundleLink").hidden=status?.bundle_required===false;
+    input.placeholder=status?.bundle_required===false?"AI 실행 환경을 준비한 뒤 다시 시작해 주세요.":"아래 안내에 따라 AI 모델을 먼저 설치해 주세요.";
   }
 }
 
