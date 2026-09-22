@@ -9,42 +9,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from urllib.parse import urljoin
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import server  # noqa: E402 - project root is added before importing app modules.
-from scripts.check_live2d_assets import atlas_pages  # noqa: E402
-
-
-def relative_asset(url: str) -> str:
-    prefix = server.LIVE2D_UPSTREAM + "/"
-    if not url.startswith(prefix):
-        raise ValueError(f"지원하지 않는 Live2D URL: {url}")
-    return url.removeprefix(prefix)
-
-
-def cache_character(character: dict) -> tuple[str, int, int]:
-    skeleton_url = character.get("live2d_skeleton_url", "")
-    atlas_url = character.get("live2d_atlas_url", "")
-    if not skeleton_url or not atlas_url:
-        return character["id"], 0, 0
-    total_bytes = 0
-    downloaded = 0
-    skeleton, _, skeleton_cached = server.live2d_asset(relative_asset(skeleton_url))
-    atlas, _, atlas_cached = server.live2d_asset(relative_asset(atlas_url))
-    total_bytes += len(skeleton) + len(atlas)
-    downloaded += int(not skeleton_cached) + int(not atlas_cached)
-    atlas_root = atlas_url.rsplit("/", 1)[0] + "/"
-    for page in atlas_pages(atlas.decode("utf-8", errors="replace")):
-        texture_url = urljoin(atlas_root, page)
-        body, _, cached = server.live2d_asset(relative_asset(texture_url))
-        total_bytes += len(body)
-        downloaded += int(not cached)
-    return character["id"], downloaded, total_bytes
 
 
 def main() -> None:
@@ -57,19 +27,13 @@ def main() -> None:
         roster = server.get_roster()
         characters = [character for character in characters if roster.get(character["id"], {}).get("owned")]
     print(f"Live2D 캐시 대상: {len(characters)}명 → {server.LIVE2D_CACHE}")
-    failures: list[str] = []
-    with ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:
-        futures = {executor.submit(cache_character, character): character for character in characters}
-        for future in as_completed(futures):
-            character = futures[future]
-            try:
-                character_id, downloaded, total_bytes = future.result()
-                print(f"OK   {character_id:<22} 새 파일 {downloaded}개 · {total_bytes / 1024 / 1024:.1f}MB")
-            except Exception as exc:  # noqa: BLE001 - continue and report every failed character.
-                failures.append(character["id"])
-                print(f"FAIL {character['id']:<22} {exc}")
-    if failures:
-        raise SystemExit("캐시 실패: " + ", ".join(failures))
+    summary = server.preload_live2d_assets(characters, workers=args.workers)
+    print(
+        f"완료: {summary['characters']}명 · 새 파일 {summary['downloaded_files']}개 · "
+        f"{summary['total_bytes'] / 1024 / 1024:.1f}MB"
+    )
+    if summary["failures"]:
+        raise SystemExit("캐시 실패: " + ", ".join(item["id"] for item in summary["failures"]))
 
 
 if __name__ == "__main__":

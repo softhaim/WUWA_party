@@ -3,18 +3,20 @@ from __future__ import annotations
 import json
 import hashlib
 import mimetypes
+import os
 import re
 import ssl
 import sqlite3
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from itertools import combinations
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 
 ROOT = Path(__file__).resolve().parent
@@ -114,6 +116,87 @@ def live2d_asset(relative_path: str) -> tuple[bytes, str, bool]:
         temporary.replace(target)
     content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
     return target.read_bytes(), content_type, cached
+
+
+def live2d_atlas_pages(atlas_text: str) -> list[str]:
+    """Return texture page names from a Spine atlas file."""
+    pages: list[str] = []
+    lines = atlas_text.replace("\r\n", "\n").split("\n")
+    for index, line in enumerate(lines):
+        value = line.strip()
+        if not value or value.startswith(("size:", "format:", "filter:", "repeat:", "pma:")):
+            continue
+        previous = lines[index - 1].strip() if index else ""
+        following = lines[index + 1].strip() if index + 1 < len(lines) else ""
+        if (not previous or index == 0) and following.startswith("size:"):
+            pages.append(value)
+    return pages
+
+
+def _live2d_relative_asset(url: str) -> str:
+    prefix = LIVE2D_UPSTREAM + "/"
+    if not url.startswith(prefix):
+        raise ValueError(f"지원하지 않는 Live2D URL: {url}")
+    return url.removeprefix(prefix)
+
+
+def cache_live2d_character(character: dict[str, Any]) -> tuple[str, int, int]:
+    """Cache one character's skeleton, atlas and every referenced texture."""
+    skeleton_url = character.get("live2d_skeleton_url", "")
+    atlas_url = character.get("live2d_atlas_url", "")
+    if not skeleton_url or not atlas_url:
+        return character.get("id", "unknown"), 0, 0
+    total_bytes = 0
+    downloaded = 0
+    skeleton, _, skeleton_cached = live2d_asset(_live2d_relative_asset(skeleton_url))
+    atlas, _, atlas_cached = live2d_asset(_live2d_relative_asset(atlas_url))
+    total_bytes += len(skeleton) + len(atlas)
+    downloaded += int(not skeleton_cached) + int(not atlas_cached)
+    atlas_root = atlas_url.rsplit("/", 1)[0] + "/"
+    for page in live2d_atlas_pages(atlas.decode("utf-8", errors="replace")):
+        texture_url = urljoin(atlas_root, page)
+        body, _, cached = live2d_asset(_live2d_relative_asset(texture_url))
+        total_bytes += len(body)
+        downloaded += int(not cached)
+    return character["id"], downloaded, total_bytes
+
+
+def preload_live2d_assets(
+    characters: list[dict[str, Any]] | None = None,
+    workers: int = 4,
+) -> dict[str, Any]:
+    """Download the complete Live2D catalog before the web server opens."""
+    if characters is None:
+        characters = json.loads((DATA / "characters.json").read_text(encoding="utf-8"))
+    targets = [
+        character for character in characters
+        if character.get("live2d_skeleton_url") and character.get("live2d_atlas_url")
+    ]
+    # Rover element forms share one visual model. Download each unique source
+    # pair once so parallel workers never race over the same temporary file.
+    unique_targets = list({
+        (character["live2d_skeleton_url"], character["live2d_atlas_url"]): character
+        for character in targets
+    }.values())
+    failures: list[dict[str, str]] = []
+    downloaded = 0
+    total_bytes = 0
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
+        futures = {executor.submit(cache_live2d_character, character): character for character in unique_targets}
+        for future in as_completed(futures):
+            character = futures[future]
+            try:
+                _, new_files, size = future.result()
+                downloaded += new_files
+                total_bytes += size
+            except Exception as exc:
+                failures.append({"id": character.get("id", "unknown"), "error": str(exc)})
+    return {
+        "characters": len(targets),
+        "downloaded_files": downloaded,
+        "total_bytes": total_bytes,
+        "failures": failures,
+    }
 
 
 def character_image(character_id: str, field: str = "image_source") -> tuple[bytes, str]:
@@ -467,6 +550,9 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         "carry_investment": round(carry_investment, 1),
         "opportunity_bonus": 0.0,
         "premium_core_mismatch": premium_core_mismatch,
+        "verified_template": bool(template),
+        "template_id": template.get("id") if template else None,
+        "template_score": template.get("score") if template else None,
     }
 
 
@@ -674,6 +760,8 @@ def serialize_teams(selected: list[dict[str, Any]], rules: dict[str, Any]) -> li
             "confidence": candidate["confidence"],
             "readiness": candidate.get("readiness", 0),
             "score_details": candidate.get("score_details", {}),
+            "verified_template": candidate.get("verified_template", False),
+            "template_id": candidate.get("template_id"),
         })
     return teams
 
@@ -683,6 +771,7 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
     rules = load_team_rules()
     roster = payload.get("roster") or get_roster()
     requested_count = payload.get("team_count", 3)
+    verified_only = bool(payload.get("verified_only"))
     available: list[dict[str, Any]] = []
     for cid, state in roster.items():
         if (
@@ -714,6 +803,13 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
     team_count = maximum_count if str(requested_count) == "all" else max(1, min(maximum_count, int(requested_count)))
 
     candidates = [evaluated for group in combinations(available, 3) if (evaluated := evaluate_team(group, rules))]
+    if verified_only:
+        candidates = [
+            candidate for candidate in candidates
+            if candidate.get("verified_template")
+            and float(candidate.get("template_score") or 0) >= 90
+            and not candidate.get("premium_core_mismatch")
+        ]
     if str(requested_count) == "all":
         candidates = [
             candidate
@@ -779,11 +875,20 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
         "rules_version": rules["version"],
         "meta_patch": rules.get("meta_patch"),
         "meta_updated_at": rules.get("meta_updated_at"),
+        "requested_team_count": requested_count,
+        "verified_only": verified_only,
     }
 
 
 def chat(payload: dict[str, Any]) -> dict[str, Any]:
-    from local_chatbot import apply_question_assumptions, build_grounding, chatbot, direct_answer
+    from local_chatbot import (
+        answer_is_roster_safe,
+        apply_question_assumptions,
+        build_grounding,
+        chatbot,
+        direct_answer,
+        format_verified_team_answer,
+    )
 
     messages = payload.get("messages") or []
     if not isinstance(messages, list) or not messages:
@@ -804,10 +909,20 @@ def chat(payload: dict[str, Any]) -> dict[str, Any]:
     )
     recommendation = None
     if wants_team_context and owned_count >= 3:
-        explicit_team_count = re.search(r"(\d+)\s*(?:개\s*)?파티", question)
+        explicit_team_count = re.search(
+            r"(\d+)\s*(?:개\s*)?(?:(?:고점|최고|메타|강한|강력한)\s*)?(?:파티|조합)",
+            question,
+        )
+        high_point_request = bool(explicit_team_count) or any(
+            keyword in question for keyword in ("고점", "최고", "메타", "강한", "강력")
+        )
         is_usage_question = bool(assumption_notes) or any(keyword in question for keyword in ("사용 횟수", "몇 번", "어디에", "어떻게 사용"))
         requested_count = int(explicit_team_count.group(1)) if explicit_team_count else ("all" if is_usage_question else payload.get("team_count", 3))
-        recommendation = recommend({"roster": roster, "team_count": requested_count})
+        recommendation = recommend({
+            "roster": roster,
+            "team_count": requested_count,
+            "verified_only": high_point_request,
+        })
     rules = load_team_rules()
     exact = direct_answer(question, recommendation, characters, rules, roster)
     if exact:
@@ -826,6 +941,9 @@ def chat(payload: dict[str, Any]) -> dict[str, Any]:
         assumption_notes,
     )
     answer = chatbot.answer(messages, grounding)
+    if recommendation and not answer_is_roster_safe(answer, question, recommendation, characters, roster):
+        answer = format_verified_team_answer(recommendation, requested_count=recommendation.get("requested_team_count"))
+        sources = ["내 보유풀 추천 계산", "검증된 메타 파티 룰"]
     return {
         "answer": answer,
         "sources": sources,
@@ -953,6 +1071,14 @@ class AppHandler(SimpleHTTPRequestHandler):
 def main() -> None:
     init_db()
     mimetypes.add_type("text/javascript", ".js")
+    if os.environ.get("RESONANCE_SKIP_LIVE2D_PRELOAD", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        print(f"Live2D 자산을 확인하고 있어요: {LIVE2D_CACHE}")
+        summary = preload_live2d_assets()
+        if summary["failures"]:
+            failed = ", ".join(item["id"] for item in summary["failures"])
+            print(f"[live2d] {summary['characters']}명 확인 · 새 파일 {summary['downloaded_files']}개 · 실패 {failed}")
+        else:
+            print(f"[live2d] {summary['characters']}명 준비 완료 · 새 파일 {summary['downloaded_files']}개")
     server = ThreadingHTTPServer(("127.0.0.1", 8000), AppHandler)
     print("Wuwa Roster Lab: http://127.0.0.1:8000")
     try:

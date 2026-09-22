@@ -154,7 +154,86 @@ def direct_answer(
             "최대 사용 횟수를 2로 올린 경우에만 서로 다른 폼을 합쳐 총 2회까지 배치할 수 있어요.",
             ["방랑자 공유 사용 규칙"],
         )
+    explicit_count = re.search(
+        r"(\d+)\s*(?:개\s*)?(?:(?:고점|최고|메타|강한|강력한)\s*)?(?:파티|조합)",
+        question,
+    )
+    if (
+        recommendation
+        and explicit_count
+        and any(word in question for word in ("추천", "알려", "뽑", "구성", "짜"))
+    ):
+        return (
+            format_verified_team_answer(recommendation, requested_count=int(explicit_count.group(1))),
+            ["내 보유풀 추천 계산", "검증된 메타 파티 룰"],
+        )
     return None
+
+
+def format_verified_team_answer(
+    recommendation: dict[str, Any],
+    requested_count: int | str | None = None,
+) -> str:
+    """Render planner-owned teams without giving the LLM room to recombine them."""
+    teams = recommendation.get("teams", [])
+    requested = requested_count if isinstance(requested_count, int) else None
+    if not teams:
+        return (
+            "**현재 보유풀에서는 검증된 고점 파티를 완성하기 어려워요.**\n\n"
+            "보유·육성 상태나 최대 사용 횟수를 조정한 뒤 다시 확인해 주세요."
+        )
+    if requested and len(teams) < requested:
+        intro = f"**{requested}개를 요청했지만, 현재 보유풀에서 검증된 고점 파티는 {len(teams)}개까지 추천할 수 있어요.**"
+    else:
+        intro = f"**현재 보유풀 기준 고점 파티 {len(teams)}개는 아래 구성이 좋아요.**"
+    rows = []
+    for team in teams:
+        names = " / ".join(member["name_ko"] for member in team.get("members", []))
+        reason = str(team.get("reason", "검증된 조합")).removeprefix("메타 조합 · ")
+        readiness = team.get("readiness")
+        detail = f" · 육성 완성도 {readiness}%" if readiness is not None else ""
+        last = reason[-1] if reason else ""
+        has_final_consonant = "가" <= last <= "힣" and (ord(last) - ord("가")) % 28 != 0
+        copula = "이에요" if has_final_consonant else "예요"
+        rows.append(f"- **{names}** — {team.get('score', 0)}점{detail}\n  {reason}{copula}.")
+    return intro + "\n\n" + "\n\n".join(rows)
+
+
+def answer_is_roster_safe(
+    answer: str,
+    question: str,
+    recommendation: dict[str, Any],
+    characters: list[dict[str, Any]],
+    roster: dict[str, dict[str, Any]],
+) -> bool:
+    """Reject hallucinated party members or recombined three-character teams."""
+    mentioned_in_question = {
+        character["id"] for character in characters
+        if character["name_ko"] in question or character.get("name", "") in question
+    }
+    for character in characters:
+        if (
+            character["name_ko"] in answer
+            and character["id"] not in mentioned_in_question
+            and not roster.get(character["id"], {}).get("owned")
+        ):
+            return False
+    allowed = {
+        frozenset(member["id"] for member in team.get("members", []))
+        for team in recommendation.get("teams", [])
+    }
+    for line in answer.splitlines():
+        # Only a slash-separated line is treated as a concrete three-member
+        # party. Prose may legitimately compare members from multiple teams.
+        if line.count("/") < 2:
+            continue
+        line_ids = {
+            character["id"] for character in characters
+            if character["name_ko"] in line
+        }
+        if len(line_ids) >= 3 and frozenset(line_ids) not in allowed:
+            return False
+    return True
 
 
 def build_grounding(

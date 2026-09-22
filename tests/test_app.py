@@ -298,6 +298,74 @@ class ResonanceLabTests(unittest.TestCase):
         answer.assert_called_once()
         self.assertIn("현재 보유풀 추천 엔진 결과", answer.call_args.args[1])
 
+    def test_explicit_high_point_list_uses_only_verified_owned_planner_teams(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "sequence": 0, "build_status": "완성", "max_uses": 1}
+            for cid in (
+                "aemeath", "denia", "chisa",
+                "hiyuki", "lucilla", "suisui",
+                "chun", "lynae", "mornye",
+                "lupa", "rebecca",
+                "phrolova", "galbrena", "cantarella",
+            )
+        }
+        roster["mornye"]["max_uses"] = 2
+        with patch.object(local_chatbot.chatbot, "answer") as answer:
+            result = server.chat({
+                "messages": [{"role": "user", "content": "내 보유풀에서 5개 고점 파티 추천해 줘"}],
+                "roster": roster,
+            })
+        answer.assert_not_called()
+        self.assertIn("에이메스 / 데니아 / 치사", result["answer"])
+        self.assertNotIn("카르티시아 / 산화", result["answer"])
+        self.assertNotIn("금희 / 린네", result["answer"])
+        owned_names = {
+            character["name_ko"] for character in server.load_characters()
+            if roster.get(character["id"], {}).get("owned")
+        }
+        for character in server.load_characters():
+            if character["name_ko"] not in owned_names:
+                self.assertNotIn(character["name_ko"], result["answer"])
+
+    def test_roster_safety_rejects_unowned_or_recombined_party(self):
+        characters = server.load_characters()
+        roster = {
+            cid: {"owned": True} for cid in ("aemeath", "denia", "chisa")
+        }
+        recommendation = {"teams": [{"members": [
+            {"id": "aemeath", "name_ko": "에이메스"},
+            {"id": "denia", "name_ko": "데니아"},
+            {"id": "chisa", "name_ko": "치사"},
+        ]}]}
+        self.assertFalse(local_chatbot.answer_is_roster_safe(
+            "에이메스 / 데니아 / 벨리나를 추천해요.", "파티 추천", recommendation, characters, roster
+        ))
+        self.assertTrue(local_chatbot.answer_is_roster_safe(
+            "에이메스 / 데니아 / 치사를 추천해요.", "파티 추천", recommendation, characters, roster
+        ))
+
+    def test_live2d_preloader_fetches_skeleton_atlas_and_texture(self):
+        character = {
+            "id": "sample",
+            "live2d_skeleton_url": server.LIVE2D_UPSTREAM + "/sample/model.skel",
+            "live2d_atlas_url": server.LIVE2D_UPSTREAM + "/sample/model.atlas",
+        }
+        requested = []
+
+        def fake_asset(relative):
+            requested.append(relative)
+            if relative.endswith(".atlas"):
+                return b"texture.png\nsize: 64,64\nformat: RGBA8888\n", "text/plain", False
+            return b"asset", "application/octet-stream", False
+
+        with patch.object(server, "live2d_asset", side_effect=fake_asset):
+            summary = server.preload_live2d_assets([character], workers=1)
+        self.assertEqual(summary["failures"], [])
+        self.assertEqual(summary["downloaded_files"], 3)
+        self.assertEqual(set(requested), {
+            "sample/model.skel", "sample/model.atlas", "sample/texture.png",
+        })
+
     def test_usage_question_applies_temporary_count_and_full_roster_context(self):
         roster = server.get_roster()
         original = roster["chisa"]["max_uses"]
