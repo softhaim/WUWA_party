@@ -49,7 +49,7 @@ AI 가이드는 운영체제에 맞는 실행 백엔드를 자동 선택합니�
 
 | 순서 | 할 일 |
 |---:|---|
-| 1 | 위 링크에서 `resonance-qwen3-4b-runtime.zip`을 받습니다. MAC 유저는 mlx 버전을 받아도 됩니다.|
+| 1 | 위 링크에서 `resonance-qwen3-4b-runtime.zip`을 받습니다.|
 | 2 | ZIP을 풀지 않고 프로젝트의 `local_ai/bundles/` 폴더에 넣습니다. |
 | 3 | 운영체제에 맞는 AI 패키지를 아래 명령으로 한 번 설치합니다. |
 | 4 | `python scripts/install_model_bundle.py`를 실행합니다. ZIP 경로는 쓰지 않아도 됩니다. |
