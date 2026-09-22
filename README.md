@@ -97,6 +97,24 @@ python server.py
 [ok] CUDA 4-bit 추론 준비가 확인됐어요.
 ```
 
+만약 확인되지 않을 시 다음과 같은 명령어를 실행한 뒤
+
+```bash
+python -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available())"
+```
+
+이후 
+```text
+2.14.0
+None
+False
+```
+과 같이 뜬다면 CPU용 torch를 지우고 CUDA wheel로 다시 설치해야 합니다. 예를 들어 CUDA 12.6 계열을 쓰려면:
+```bash
+pip uninstall torch torchvision torchaudio -y
+```
+를 하여 제거 후 다시 PyTorch를 설치를 해보세요.
+
 이제 Windows/Linux 추론은 `bitsandbytes` NF4 4-bit 모델 전체를 선택한 GPU에 고정해요. CUDA 또는 4-bit 패키지가 준비되지 않으면 RAM으로 조용히 전환하지 않고 AI 가이드 화면과 터미널에 원인을 표시해요. 여러 GPU 중 다른 장치를 쓰려면 서버 실행 전에 `RESONANCE_CUDA_DEVICE`를 해당 GPU 번호로 설정할 수 있어요.
 
 Linux에서는 같은 PyTorch 설치 후 다음 명령을 사용합니다.
