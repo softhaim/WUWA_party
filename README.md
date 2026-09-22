@@ -43,7 +43,7 @@ AI 가이드는 운영체제에 맞는 실행 백엔드를 자동 선택합니�
 | Windows/Linux + NVIDIA GPU | Transformers 4-bit CUDA | PEFT LoRA |
 | Windows/Linux CPU | Transformers CPU | PEFT LoRA, 실행은 가능하지만 매우 느림 |
 
-[AI 모델 번들 다운로드](https://drive.google.com/file/d/1R_FOSyqjrUKm0ZYhfkTgQzqzOjQMx_Ls/view?usp=sharing)
+[AI 모델 번들 다운로드](https://drive.google.com/drive/folders/1TcNuDnVOnchhMmfK9phJ_TMabgfWhUC8?usp=sharing)
 
 ZIP을 직접 풀 필요는 없습니다. 설치기가 체크섬을 검증한 뒤 다음 위치에 알아서 배치합니다.
 
