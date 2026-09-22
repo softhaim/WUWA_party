@@ -45,14 +45,24 @@ AI 가이드는 운영체제에 맞는 실행 백엔드를 자동 선택합니�
 
 [AI 모델 번들 다운로드](https://drive.google.com/drive/folders/1TcNuDnVOnchhMmfK9phJ_TMabgfWhUC8?usp=sharing)
 
-ZIP은 프로젝트 안의 특정 폴더에 둘 필요가 없습니다. `다운로드` 폴더처럼 사용자가 읽을 수 있는 아무 경로에 저장한 뒤, 그 ZIP의 실제 경로를 설치 명령 마지막 인자로 전달하면 됩니다. 아래 예시는 파일을 기본 다운로드 폴더에 저장하고 파일명을 `resonance-qwen3-4b-runtime.zip`으로 맞춘 경우입니다.
+### 가장 쉬운 설치 방법
+
+| 순서 | 할 일 |
+|---:|---|
+| 1 | 위 링크에서 `resonance-qwen3-4b-runtime.zip`을 받습니다. |
+| 2 | ZIP을 풀지 않고 프로젝트의 `local_ai/bundles/` 폴더에 넣습니다. |
+| 3 | 운영체제에 맞는 AI 패키지를 아래 명령으로 한 번 설치합니다. |
+| 4 | `python scripts/install_model_bundle.py`를 실행합니다. ZIP 경로는 쓰지 않아도 됩니다. |
+| 5 | `python server.py`를 실행하고 `http://127.0.0.1:8000`을 엽니다. |
+
+즉, Python 환경과 AI 패키지가 이미 준비되어 있다면 **ZIP을 `local_ai/bundles/`에 넣기 → 설치 스크립트 실행 → 서버 실행** 순서가 전부입니다.
 
 ZIP을 직접 풀지 마세요. 설치기가 체크섬을 검증한 뒤 압축 안의 파일을 프로젝트 기준으로 다음 위치에 알아서 배치합니다.
 
 - 기본 모델: `local_ai/models/`
 - 학습된 LoRA: `local_ai/adapters/`
 
-예를 들어 `/Users/me/AI/model.zip`에 저장했다면 Mac/Linux에서는 `python scripts/install_model_bundle.py /Users/me/AI/model.zip`, Windows의 `D:\AI\model.zip`에 저장했다면 `python scripts\install_model_bundle.py "D:\AI\model.zip"`처럼 입력합니다. 경로에 공백이 있으면 반드시 따옴표로 감싸세요. 설치가 성공한 뒤에는 원본 ZIP을 다른 곳으로 옮기거나 삭제해도 실행에 영향이 없습니다.
+ZIP을 다른 곳에 두고 싶은 사용자는 기존처럼 경로를 직접 지정할 수도 있습니다. 예를 들어 Mac/Linux에서는 `python scripts/install_model_bundle.py /Users/me/AI/model.zip`, Windows에서는 `python scripts\install_model_bundle.py "D:\AI\model.zip"`처럼 실행합니다. 경로에 공백이 있으면 따옴표로 감싸세요. 설치가 성공한 뒤에는 원본 ZIP을 옮기거나 삭제해도 실행에 영향이 없습니다.
 
 현재 배포 ZIP이 MLX 기본 모델만 포함해도 학습 결과 자체는 다른 운영체제에서 사용할 수 있습니다. 설치기가 MLX LoRA를 Windows/Linux용 PEFT 형식으로 변환하고, 해당 플랫폼의 Transformers 기본 모델이 없으면 Hugging Face에서 자동으로 한 번 내려받습니다. 따라서 일반 설치에는 같은 ZIP을 쓰되 인터넷 연결이 필요할 수 있습니다. 인터넷 없이 모든 플랫폼에서 설치하려면 아래의 `universal` 번들을 사용해야 합니다.
 
@@ -61,7 +71,7 @@ ZIP을 직접 풀지 마세요. 설치기가 체크섬을 검증한 뒤 압축 �
 ```bash
 python3 -m venv .venv-ai
 .venv-ai/bin/python -m pip install -r requirements-ai-mlx.txt
-.venv-ai/bin/python scripts/install_model_bundle.py ~/Downloads/resonance-qwen3-4b-runtime.zip
+.venv-ai/bin/python scripts/install_model_bundle.py
 .venv-ai/bin/python server.py
 ```
 
@@ -73,7 +83,7 @@ python3 -m venv .venv-ai
 py -m venv .venv-ai
 .venv-ai\Scripts\activate
 python -m pip install -r requirements-ai-transformers.txt
-python scripts\install_model_bundle.py "%USERPROFILE%\Downloads\resonance-qwen3-4b-runtime.zip"
+python scripts\install_model_bundle.py
 python server.py
 ```
 
@@ -83,7 +93,7 @@ Linux에서는 같은 PyTorch 설치 후 다음 명령을 사용합니다.
 python3 -m venv .venv-ai
 source .venv-ai/bin/activate
 python -m pip install -r requirements-ai-transformers.txt
-python scripts/install_model_bundle.py ~/Downloads/resonance-qwen3-4b-runtime.zip
+python scripts/install_model_bundle.py
 python server.py
 ```
 

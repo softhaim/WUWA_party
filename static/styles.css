@@ -29,3 +29,4 @@ dialog{max-width:min(1180px,calc(100% - 32px));width:min(1180px,calc(100% - 32px
 .ai-setup-notice a:first-child{background:var(--accent);border-color:var(--accent);color:#111}
 .chat-message p strong{color:#f4ffbd;font-weight:850}
 .chat-message p code{padding:2px 5px;border-radius:5px;background:#0b1015;color:#d9ef83;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em}
+.chat-message p .chat-bullet{display:grid;grid-template-columns:14px 1fr;gap:5px;margin:5px 0}.chat-message p .chat-bullet i{color:var(--accent);font-style:normal;font-weight:900}.chat-message p .chat-gap{display:block;height:4px}

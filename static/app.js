@@ -57,11 +57,18 @@ async function api(path, options={}) {
 function defaultRoster(id){return {character_id:id,owned:false,sequence:0,level:1,build_status:"미육성",max_uses:1,signature_weapon:false,weapon_rank:1};}
 function rosterOf(id){return state.roster[id] || (state.roster[id]=defaultRoster(id));}
 function escapeHtml(value){return String(value).replace(/[&<>'"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));}
-function formatChatContent(value){
+function formatChatInline(value){
   return escapeHtml(value)
     .replace(/\*\*([^*\n]+)\*\*/g,"<strong>$1</strong>")
-    .replace(/`([^`\n]+)`/g,"<code>$1</code>")
-    .replace(/\n/g,"<br>");
+    .replace(/`([^`\n]+)`/g,"<code>$1</code>");
+}
+function formatChatContent(value){
+  return String(value).split("\n").map(line=>{
+    const bullet=line.match(/^\s*[-*]\s+(.+)$/);
+    if(bullet)return `<span class="chat-bullet"><i>•</i><span>${formatChatInline(bullet[1])}</span></span>`;
+    if(!line.trim())return '<span class="chat-gap" aria-hidden="true"></span>';
+    return formatChatInline(line);
+  }).join("<br>");
 }
 function setSaveState(mode,text){const el=$("#saveState");el.className=`save-state ${mode}`;el.querySelector("span").textContent=text;}
 function savedLabel(value){if(!value)return "SQLite 저장 준비됨";const d=new Date(value.includes("T")?value:`${value.replace(" ","T")}Z`);return `DB 저장 확인 · ${Number.isNaN(d.getTime())?value:d.toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`;}

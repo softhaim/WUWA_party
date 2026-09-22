@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import server
 import local_chatbot
+from scripts import install_model_bundle
 from scripts.convert_mlx_adapter_to_peft import convert
 from scripts.training_metrics import parse_metric
 
@@ -55,9 +56,17 @@ class ResonanceLabTests(unittest.TestCase):
 
     def test_chat_requires_honorific_korean_and_readme_explains_bundle_location(self):
         readme = (server.ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("모든 문장을 일관된 존댓말", local_chatbot.SYSTEM_PROMPT)
-        self.assertIn("프로젝트 안의 특정 폴더에 둘 필요가 없습니다", readme)
-        self.assertIn("ZIP의 실제 경로", readme)
+        self.assertIn("친근한 존댓말", local_chatbot.SYSTEM_PROMPT)
+        self.assertIn("local_ai/bundles/", readme)
+        self.assertIn("ZIP 경로는 쓰지 않아도 됩니다", readme)
+
+    def test_model_installer_discovers_default_bundle_without_path(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            bundle_dir = Path(temp_name)
+            bundle = bundle_dir / "resonance-qwen3-4b-runtime.zip"
+            bundle.touch()
+            with patch.object(install_model_bundle, "DEFAULT_BUNDLE_DIR", bundle_dir):
+                self.assertEqual(install_model_bundle.find_bundle(None), bundle.resolve())
 
     def test_chat_ui_renders_safe_basic_markdown_and_missing_model_notice(self):
         index = (server.STATIC / "index.html").read_text(encoding="utf-8")
@@ -65,6 +74,7 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn('id="aiSetupNotice"', index)
         self.assertIn("formatChatContent", app)
         self.assertIn('<strong>$1</strong>', app)
+        self.assertIn('class="chat-bullet"', app)
         self.assertIn('api("/api/ai/status")', app)
 
     def test_static_bundle_supports_direct_file_open(self):

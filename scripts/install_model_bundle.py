@@ -16,6 +16,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_AI = ROOT / "local_ai"
+DEFAULT_BUNDLE_DIR = LOCAL_AI / "bundles"
+DEFAULT_BUNDLE_NAMES = (
+    "resonance-qwen3-4b-runtime.zip",
+    "resonance-qwen3-4b-mlx-runtime.zip",
+)
 ALLOWED_ROOTS = {"models", "adapters"}
 
 
@@ -32,15 +37,44 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def find_bundle(value: Path | None) -> Path:
+    """Resolve an explicit ZIP or discover one in local_ai/bundles/."""
+    if value is not None:
+        return value.expanduser().resolve()
+    for name in DEFAULT_BUNDLE_NAMES:
+        candidate = DEFAULT_BUNDLE_DIR / name
+        if candidate.is_file():
+            return candidate.resolve()
+    candidates = sorted(DEFAULT_BUNDLE_DIR.glob("*.zip"))
+    if len(candidates) == 1:
+        return candidates[0].resolve()
+    if len(candidates) > 1:
+        names = "\n- ".join(path.name for path in candidates)
+        raise SystemExit(
+            "모델 ZIP이 여러 개라 자동 선택할 수 없어요. 사용할 ZIP 경로를 명령 뒤에 적어 주세요:\n- " + names
+        )
+    raise SystemExit(
+        "모델 ZIP을 찾지 못했어요. 다운로드한 ZIP을 다음 폴더에 넣고 다시 실행해 주세요:\n"
+        f"{DEFAULT_BUNDLE_DIR}\n"
+        "또는 python scripts/install_model_bundle.py <ZIP 경로> 형식으로 실행할 수 있어요."
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Google Drive에서 받은 로컬 모델 번들 설치")
-    parser.add_argument("bundle", type=Path, help="다운로드한 resonance-qwen3-4b-runtime.zip 경로")
+    parser.add_argument(
+        "bundle",
+        type=Path,
+        nargs="?",
+        help="ZIP 경로. 생략하면 local_ai/bundles/에서 자동으로 찾음",
+    )
     parser.add_argument("--backend", choices=("auto", "mlx", "transformers", "all"), default="auto")
     parser.add_argument("--no-download", action="store_true", help="번들에 현재 플랫폼 기본 모델이 없어도 자동 다운로드하지 않음")
     args = parser.parse_args()
-    bundle = args.bundle.expanduser().resolve()
+    bundle = find_bundle(args.bundle)
     if not bundle.is_file():
         raise SystemExit(f"번들을 찾을 수 없습니다: {bundle}")
+    print(f"[bundle] {bundle}")
 
     with tempfile.TemporaryDirectory(prefix="resonance-model-") as temp_name:
         temp = Path(temp_name)

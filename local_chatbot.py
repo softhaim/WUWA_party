@@ -17,7 +17,7 @@ MLX_REPOSITORY = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
 TRANSFORMERS_REPOSITORY = "Qwen/Qwen3-4B-Instruct-2507"
 MLX_ADAPTER = ROOT / "local_ai" / "adapters" / "qwen3-4b-mlx"
 PEFT_ADAPTER = ROOT / "local_ai" / "adapters" / "qwen3-4b-cuda"
-BUNDLE_URL = "https://drive.google.com/file/d/1R_FOSyqjrUKm0ZYhfkTgQzqzOjQMx_Ls/view?usp=sharing"
+BUNDLE_URL = "https://drive.google.com/drive/folders/1TcNuDnVOnchhMmfK9phJ_TMabgfWhUC8?usp=sharing"
 SYSTEM_PROMPT = """당신은 명조: 워더링 웨이브 전용 한국어 육성 도우미 '레조'다.
 반드시 아래 원칙을 지킨다.
 1. [현재 앱 데이터]에 있는 사실만 게임의 확정 정보처럼 말한다.
@@ -36,7 +36,8 @@ SYSTEM_PROMPT = """당신은 명조: 워더링 웨이브 전용 한국어 육성
 14. 앱 데이터는 근거이지 답변 서식이 아니다. 자료를 그대로 복사하지 말고 질문에 필요한 내용만 자연스럽게 요약한다.
 15. 자료에 없는 캐릭터 효과, 버프 종류, 보호 능력, 스킬 효과를 그럴듯하게 만들어내지 않는다.
 16. 대체 파티나 대체 파츠 자료가 제공되지 않았다면 대체 가능성을 추측하거나 상투적인 대체안 문장을 덧붙이지 않는다.
-17. 사용자에게 말할 때는 모든 문장을 일관된 존댓말로 쓴다. 문장 종결은 '-합니다', '-입니다', '-해요', '-하세요'처럼 작성하고, '-한다', '-이다', '-된다', '-있다' 같은 반말·평서형 종결은 사용하지 않는다.
+17. 사용자에게는 친근한 존댓말로 말한다. 문장 종결은 '-해요', '-예요', '-이에요', '-돼요', '-보여요'를 우선하고, 딱딱한 '-합니다/-입니다'와 반말·평서형 '-한다/-이다/-된다/-있다'는 사용하지 않는다.
+18. 답변 첫 줄에는 질문에 대한 결론을 **굵게** 한 문장으로 쓴다. 그 뒤 한 줄을 비우고, 비교하거나 배분할 항목이 둘 이상이면 '- ' 글머리표로 나눈다. 긴 문단 하나로 몰아쓰지 않는다.
 """
 
 
@@ -116,7 +117,9 @@ def direct_answer(
     """Answer only hard invariants that should not rely on probabilistic prose."""
     if "방랑자" in question and any(word in question for word in ("동시", "여러", "같이", "속성", "횟수")):
         return (
-            "방랑자의 속성별 폼은 동시에 따로 사용할 수 없어요. 기류 방랑자를 한 번 사용하면 회절·인멸·전도 방랑자도 같은 방랑자 사용 슬롯에서 함께 1회 차감됩니다. 최대 사용 횟수를 2로 올린 경우에만 서로 다른 폼을 합쳐 총 2회까지 배치할 수 있어요.",
+            "**방랑자의 속성별 폼은 동시에 따로 사용할 수 없어요.**\n\n"
+            "기류 방랑자를 한 번 사용하면 회절·인멸·전도 방랑자도 같은 방랑자 사용 슬롯에서 함께 1회 차감돼요. "
+            "최대 사용 횟수를 2로 올린 경우에만 서로 다른 폼을 합쳐 총 2회까지 배치할 수 있어요.",
             ["방랑자 공유 사용 규칙"],
         )
     return None
@@ -312,7 +315,8 @@ def build_grounding(
 
     sections.append(
         "답변 문체 지침: 위 데이터는 답변의 근거로만 사용하고 그대로 복사하지 않는다. "
-        "모든 문장은 '-합니다', '-입니다', '-해요', '-하세요' 형태의 존댓말로 작성한다."
+        "첫 줄에 결론을 **굵게** 쓰고 한 줄을 비운 뒤 근거를 정리한다. 항목이 둘 이상이면 '- ' 글머리표를 사용한다. "
+        "모든 문장은 '-해요', '-예요', '-이에요', '-돼요', '-보여요' 형태의 친근한 존댓말로 작성하고 '-합니다/-입니다'는 피한다."
     )
 
     return "\n\n".join(sections), list(dict.fromkeys(sources))

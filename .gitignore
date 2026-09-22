@@ -7,5 +7,7 @@ local_ai/checkpoints/
 local_ai/models/
 local_ai/runs/
 local_ai/dist/
+local_ai/bundles/*.zip
+local_ai/bundles/*.part
 local_ai/adapters/*/checkpoints/
 .DS_Store
