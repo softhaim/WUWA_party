@@ -77,15 +77,27 @@ python3 -m venv .venv-ai
 
 ### Windows/Linux + NVIDIA GPU
 
-먼저 [PyTorch 설치 선택기](https://pytorch.org/get-started/locally/)에서 GPU와 CUDA 버전에 맞는 PyTorch 명령을 실행합니다. 이어서 다음 명령을 사용합니다.
+먼저 [PyTorch 설치 선택기](https://pytorch.org/get-started/locally/)에서 운영체제와 CUDA 버전에 맞는 명령을 선택해 **현재 가상환경에 CUDA용 PyTorch를 설치**해 주세요. PC에 NVIDIA 드라이버나 CUDA Toolkit만 설치되어 있어도 Python 환경에 CPU용 PyTorch가 들어 있으면 GPU를 사용할 수 없어요.
 
 ```powershell
 py -m venv .venv-ai
 .venv-ai\Scripts\activate
 python -m pip install -r requirements-ai-transformers.txt
 python scripts\install_model_bundle.py
+python scripts\check_ai_runtime.py
 python server.py
 ```
+
+진단 결과에서 다음 값이 확인되어야 해요.
+
+```text
+"cuda_available": true
+"gpu_name": "NVIDIA ..."
+"bitsandbytes": "0.48..."
+[ok] CUDA 4-bit 추론 준비가 확인됐어요.
+```
+
+이제 Windows/Linux 추론은 `bitsandbytes` NF4 4-bit 모델 전체를 선택한 GPU에 고정해요. CUDA 또는 4-bit 패키지가 준비되지 않으면 RAM으로 조용히 전환하지 않고 AI 가이드 화면과 터미널에 원인을 표시해요. 여러 GPU 중 다른 장치를 쓰려면 서버 실행 전에 `RESONANCE_CUDA_DEVICE`를 해당 GPU 번호로 설정할 수 있어요.
 
 Linux에서는 같은 PyTorch 설치 후 다음 명령을 사용합니다.
 
@@ -97,7 +109,7 @@ python scripts/install_model_bundle.py
 python server.py
 ```
 
-CUDA가 있으면 4-bit로 로드하고, 없으면 CPU로 실행합니다. CPU 모드는 Qwen3 4B 전체 가중치를 메모리에 올리므로 16GB 이상 RAM을 권장하지만 실사용은 NVIDIA GPU 환경을 권장합니다.
+기본 설정에서는 CUDA가 없을 때 CPU로 자동 전환하지 않아요. CPU 실행이 꼭 필요한 사용자는 `RESONANCE_ALLOW_CPU=1`을 명시적으로 설정할 수 있지만, Qwen3 4B 전체 가중치를 RAM에 올리므로 매우 느려요. 모델을 처음 읽는 동안 파일 캐시 때문에 RAM 사용량이 일시적으로 오를 수는 있지만, 로딩 완료 후 터미널에는 실제 GPU 이름·4-bit 방식·VRAM 사용량·CPU 오프로딩 여부가 출력돼요.
 
 ### ZIP을 받을 수 없을 때
 

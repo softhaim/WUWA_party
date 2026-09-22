@@ -50,6 +50,38 @@ def _peft_adapter_ready(path: Path) -> bool:
     return weights and (path / "adapter_config.json").exists()
 
 
+def _enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def transformers_runtime_info() -> dict[str, Any]:
+    """Inspect the Windows/Linux runtime without loading model weights."""
+    info: dict[str, Any] = {
+        "cuda_available": False,
+        "cuda_build": None,
+        "gpu_count": 0,
+        "gpu_name": None,
+        "bitsandbytes_installed": importlib.util.find_spec("bitsandbytes") is not None,
+        "allow_cpu": _enabled("RESONANCE_ALLOW_CPU"),
+    }
+    if importlib.util.find_spec("torch") is None:
+        return info
+    try:
+        import torch
+
+        info["cuda_build"] = getattr(torch.version, "cuda", None)
+        info["cuda_available"] = bool(torch.cuda.is_available())
+        if info["cuda_available"]:
+            info["gpu_count"] = int(torch.cuda.device_count())
+            selected = int(os.environ.get("RESONANCE_CUDA_DEVICE", "0"))
+            if 0 <= selected < info["gpu_count"]:
+                info["gpu_name"] = torch.cuda.get_device_name(selected)
+                info["cuda_device"] = selected
+    except Exception as exc:  # pragma: no cover - vendor failures vary by host.
+        info["diagnostic_error"] = str(exc)
+    return info
+
+
 def detect_backend(requested: str | None = None) -> str:
     """Choose MLX on Apple Silicon and Transformers everywhere else.
 
@@ -336,6 +368,7 @@ class LocalChatbot:
         self._model: Any = None
         self._tokenizer: Any = None
         self._load_error: str | None = None
+        self._runtime: dict[str, Any] = {}
         self._lock = threading.Lock()
 
     def status(self) -> dict[str, Any]:
@@ -350,7 +383,11 @@ class LocalChatbot:
             dependencies = ("torch", "transformers", "peft")
         model_ready = (model_path / "config.json").is_file()
         missing_dependencies = [name for name in dependencies if importlib.util.find_spec(name) is None]
-        ready = model_ready and adapter_ready and not missing_dependencies
+        runtime = transformers_runtime_info() if self.backend == "transformers" else {}
+        accelerator_ready = self.backend == "mlx" or (
+            runtime.get("cuda_available") and runtime.get("bitsandbytes_installed")
+        ) or runtime.get("allow_cpu")
+        ready = model_ready and adapter_ready and not missing_dependencies and accelerator_ready
         missing = []
         if not model_ready:
             missing.append(f"{self.backend} 기본 모델")
@@ -358,6 +395,11 @@ class LocalChatbot:
             missing.append("학습 어댑터")
         if missing_dependencies:
             missing.append("실행 패키지(" + ", ".join(missing_dependencies) + ")")
+        if self.backend == "transformers" and not runtime.get("allow_cpu"):
+            if not runtime.get("cuda_available"):
+                missing.append("PyTorch CUDA 연결")
+            elif not runtime.get("bitsandbytes_installed"):
+                missing.append("bitsandbytes 4-bit 패키지")
         message = (
             "AI 가이드를 사용할 수 있습니다."
             if ready
@@ -371,6 +413,7 @@ class LocalChatbot:
             "missing_dependencies": missing_dependencies,
             "message": message,
             "bundle_url": BUNDLE_URL,
+            "runtime": {**runtime, **self._runtime},
         }
 
     def _load_mlx(self) -> None:
@@ -385,7 +428,7 @@ class LocalChatbot:
         self._model, self._tokenizer = load(self.model_id, **kwargs)
 
     def _load_transformers(self) -> None:
-        """Load a CUDA/CPU Transformers model and an optional PEFT LoRA."""
+        """Load 4-bit Transformers fully on CUDA unless CPU mode is explicit."""
         missing = [name for name in ("torch", "transformers") if importlib.util.find_spec(name) is None]
         if missing:
             raise RuntimeError(
@@ -394,19 +437,44 @@ class LocalChatbot:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        kwargs: dict[str, Any] = {"low_cpu_mem_usage": True}
-        if torch.cuda.is_available():
-            kwargs["device_map"] = "auto"
-            kwargs["torch_dtype"] = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-            if importlib.util.find_spec("bitsandbytes") is not None:
-                from transformers import BitsAndBytesConfig
+        allow_cpu = _enabled("RESONANCE_ALLOW_CPU")
+        cuda_available = bool(torch.cuda.is_available())
+        if not cuda_available and not allow_cpu:
+            cuda_build = getattr(torch.version, "cuda", None)
+            detail = "CPU 전용 PyTorch가 설치되어 있어요." if not cuda_build else "NVIDIA 드라이버 또는 CUDA 연결을 확인해 주세요."
+            raise RuntimeError(
+                "CUDA를 사용할 수 없어 CPU로 전환하지 않았어요. " + detail
+                + " `python scripts/check_ai_runtime.py`로 진단한 뒤 README의 Windows CUDA 설치 단계를 진행해 주세요. "
+                "CPU 실행이 꼭 필요할 때만 RESONANCE_ALLOW_CPU=1을 설정할 수 있어요."
+            )
 
-                kwargs["quantization_config"] = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_use_double_quant=True,
-                    bnb_4bit_compute_dtype=kwargs["torch_dtype"],
+        kwargs: dict[str, Any] = {"low_cpu_mem_usage": True}
+        selected_device: int | None = None
+        if cuda_available:
+            if importlib.util.find_spec("bitsandbytes") is None:
+                raise RuntimeError(
+                    "CUDA는 감지됐지만 bitsandbytes가 없어 4-bit GPU 로딩을 할 수 없어요. "
+                    "`python -m pip install -r requirements-ai-transformers.txt`를 실행해 주세요."
                 )
+            from transformers import BitsAndBytesConfig
+
+            selected_device = int(os.environ.get("RESONANCE_CUDA_DEVICE", "0"))
+            if selected_device < 0 or selected_device >= torch.cuda.device_count():
+                raise RuntimeError(
+                    f"RESONANCE_CUDA_DEVICE={selected_device}를 사용할 수 없어요. 감지된 GPU는 {torch.cuda.device_count()}개예요."
+                )
+            torch.cuda.set_device(selected_device)
+            compute_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            # A fixed map prevents Accelerate from silently placing full-precision
+            # layers in system RAM when it decides the GPU budget is too small.
+            kwargs["device_map"] = {"": selected_device}
+            kwargs["torch_dtype"] = compute_dtype
+            kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=compute_dtype,
+            )
         else:
             kwargs["torch_dtype"] = torch.float32
 
@@ -414,12 +482,37 @@ class LocalChatbot:
         if self._tokenizer.pad_token_id is None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
         self._model = AutoModelForCausalLM.from_pretrained(self.model_id, **kwargs)
+        if cuda_available:
+            if not getattr(self._model, "is_loaded_in_4bit", False):
+                raise RuntimeError("4-bit CUDA 모델로 로드되지 않았어요. bitsandbytes 설치 상태를 확인해 주세요.")
+            device_map = getattr(self._model, "hf_device_map", {}) or {}
+            offloaded = {str(device) for device in device_map.values()} & {"cpu", "disk"}
+            if offloaded:
+                raise RuntimeError("모델 일부가 RAM/디스크로 오프로딩되어 실행을 중단했어요: " + ", ".join(sorted(offloaded)))
         if _peft_adapter_ready(self.adapter_path):
             if importlib.util.find_spec("peft") is None:
                 raise RuntimeError("PEFT 어댑터가 있지만 peft 패키지가 설치되지 않았습니다.")
             from peft import PeftModel
 
             self._model = PeftModel.from_pretrained(self._model, str(self.adapter_path))
+        if cuda_available:
+            actual_device = self._model.get_input_embeddings().weight.device
+            if actual_device.type != "cuda":
+                raise RuntimeError(f"모델이 GPU가 아닌 {actual_device}에 로드됐어요.")
+            self._runtime = {
+                "execution_device": str(actual_device),
+                "gpu_name": torch.cuda.get_device_name(selected_device),
+                "quantization": "bitsandbytes NF4 4-bit",
+                "vram_allocated_gib": round(torch.cuda.memory_allocated(selected_device) / 1024**3, 2),
+                "cpu_offload": False,
+            }
+            print(
+                f"[ai] {self._runtime['gpu_name']} · {self._runtime['quantization']} · "
+                f"VRAM {self._runtime['vram_allocated_gib']} GiB · CPU offload 없음"
+            )
+        else:
+            self._runtime = {"execution_device": "cpu", "quantization": "float32", "cpu_offload": True}
+            print("[ai] 명시적으로 허용된 CPU float32 모드로 실행해요.")
         self._model.eval()
 
     def _load(self) -> None:

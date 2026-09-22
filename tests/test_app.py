@@ -1,6 +1,7 @@
 import json
 import importlib.util
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -23,6 +24,93 @@ class ResonanceLabTests(unittest.TestCase):
         ):
             self.assertEqual(local_chatbot.detect_backend(), "transformers")
         self.assertEqual(local_chatbot.detect_backend("transformers"), "transformers")
+
+    def test_transformers_status_refuses_silent_cpu_fallback(self):
+        bot = local_chatbot.LocalChatbot("transformers")
+        runtime = {
+            "cuda_available": False,
+            "bitsandbytes_installed": True,
+            "allow_cpu": False,
+        }
+        with patch.object(local_chatbot, "transformers_runtime_info", return_value=runtime), patch.object(
+            local_chatbot.importlib.util, "find_spec", return_value=object()
+        ), patch.object(Path, "is_file", return_value=True), patch.object(
+            local_chatbot, "_peft_adapter_ready", return_value=True
+        ):
+            status = bot.status()
+        self.assertFalse(status["ready"])
+        self.assertIn("PyTorch CUDA 연결", status["message"])
+
+    def test_transformers_status_accepts_cuda_4bit_runtime(self):
+        bot = local_chatbot.LocalChatbot("transformers")
+        runtime = {
+            "cuda_available": True,
+            "bitsandbytes_installed": True,
+            "allow_cpu": False,
+            "gpu_name": "Test GPU",
+        }
+        with patch.object(local_chatbot, "transformers_runtime_info", return_value=runtime), patch.object(
+            local_chatbot.importlib.util, "find_spec", return_value=object()
+        ), patch.object(Path, "is_file", return_value=True), patch.object(
+            local_chatbot, "_peft_adapter_ready", return_value=True
+        ):
+            status = bot.status()
+        self.assertTrue(status["ready"])
+        self.assertEqual(status["runtime"]["gpu_name"], "Test GPU")
+
+    def test_transformers_loader_pins_4bit_model_to_cuda_without_offload(self):
+        captured = {}
+
+        class FakeCuda:
+            @staticmethod
+            def is_available(): return True
+            @staticmethod
+            def device_count(): return 1
+            @staticmethod
+            def set_device(index): captured["set_device"] = index
+            @staticmethod
+            def is_bf16_supported(): return False
+            @staticmethod
+            def get_device_name(index): return "Test GPU"
+            @staticmethod
+            def memory_allocated(index): return 2 * 1024**3
+
+        fake_torch = types.SimpleNamespace(cuda=FakeCuda(), float16="float16", float32="float32")
+        fake_tokenizer = types.SimpleNamespace(pad_token_id=0, eos_token=None)
+        fake_embedding = types.SimpleNamespace(weight=types.SimpleNamespace(device=types.SimpleNamespace(type="cuda", __str__=lambda self: "cuda:0")))
+
+        class FakeModel:
+            is_loaded_in_4bit = True
+            hf_device_map = {"": 0}
+            def get_input_embeddings(self): return fake_embedding
+            def eval(self): captured["eval"] = True
+
+        class AutoModel:
+            @staticmethod
+            def from_pretrained(model_id, **kwargs):
+                captured["kwargs"] = kwargs
+                return FakeModel()
+
+        class AutoTokenizer:
+            @staticmethod
+            def from_pretrained(model_id, **kwargs): return fake_tokenizer
+
+        class BitsAndBytesConfig:
+            def __init__(self, **kwargs): captured["quantization"] = kwargs
+
+        fake_transformers = types.SimpleNamespace(
+            AutoModelForCausalLM=AutoModel,
+            AutoTokenizer=AutoTokenizer,
+            BitsAndBytesConfig=BitsAndBytesConfig,
+        )
+        bot = local_chatbot.LocalChatbot("transformers")
+        with patch.dict("sys.modules", {"torch": fake_torch, "transformers": fake_transformers}), patch.object(
+            local_chatbot.importlib.util, "find_spec", return_value=object()
+        ), patch.object(local_chatbot, "_peft_adapter_ready", return_value=False):
+            bot._load_transformers()
+        self.assertEqual(captured["kwargs"]["device_map"], {"": 0})
+        self.assertTrue(captured["quantization"]["load_in_4bit"])
+        self.assertFalse(bot._runtime["cpu_offload"])
 
     @unittest.skipUnless(importlib.util.find_spec("safetensors"), "safetensors optional dependency")
     def test_mlx_adapter_converts_to_peft_shapes(self):

@@ -42,7 +42,9 @@ local_chatbot.py
 
 ### Transformers/PEFT
 
-CUDA가 있으면 `bitsandbytes` NF4 4-bit로 기본 모델을 올리고, `PeftModel.from_pretrained()`가 `adapter_model.safetensors`를 적용합니다. CUDA 학습기의 출력 폴더가 곧 서비스 입력 폴더이므로 추가 병합은 필요하지 않습니다. CUDA가 없으면 CPU float32로 실행되므로 더 많은 RAM과 시간이 필요합니다.
+CUDA가 있으면 `bitsandbytes` NF4 4-bit로 기본 모델 전체를 지정 GPU에 고정하고, `PeftModel.from_pretrained()`가 `adapter_model.safetensors`를 적용합니다. CUDA 학습기의 출력 폴더가 곧 서비스 입력 폴더이므로 추가 병합은 필요하지 않습니다. `device_map="auto"`에 의한 RAM 오프로딩은 사용하지 않으며, CUDA가 없으면 기본적으로 오류를 표시합니다. CPU 모드는 `RESONANCE_ALLOW_CPU=1`을 지정한 경우에만 허용합니다.
+
+Windows/Linux에서는 서버 실행 전에 `python scripts/check_ai_runtime.py`로 PyTorch CUDA 빌드, GPU 이름, bitsandbytes와 모델/어댑터 존재 여부를 한 번에 확인할 수 있습니다.
 
 ## MLX LoRA를 PEFT로 변환
 
