@@ -92,7 +92,16 @@ python scripts\check_ai_runtime.py
 python server.py
 ```
 
-진단 결과에서 다음 값이 확인되어야 해요.
+'권한 오류(ExecutionPolicy)'가 뜨는 경우
+만약 위 명령어를 입력했을 때 스크립트를 실행할 수 없으므로... 또는 Execution_Policies 관련 빨간색 오류가 나온다면, 보안 정책 때문에 스크립트 실행이 막혀 있는 것입니다.
+
+그럴 때는 터미널에 아래 명령어를 먼저 입력해 권한을 풀고 다시 활성화해 주세요.
+
+```bash
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+```
+
+check_ai_runtime.py 를 통한 진단 결과에서 다음 값이 확인되어야 해요.
 
 ```text
 "cuda_available": true
