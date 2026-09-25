@@ -68,7 +68,7 @@ ZIP을 직접 풀지 마세요. 설치기가 체크섬을 검증한 뒤 압축 �
 
 ZIP을 다른 곳에 두고 싶은 사용자는 기존처럼 경로를 직접 지정할 수도 있습니다. 예를 들어 Mac/Linux에서는 `python scripts/install_model_bundle.py /Users/me/AI/model.zip`, Windows에서는 `python scripts\install_model_bundle.py "D:\AI\model.zip"`처럼 실행합니다. 경로에 공백이 있으면 따옴표로 감싸세요. 설치가 성공한 뒤에는 원본 ZIP을 옮기거나 삭제해도 실행에 영향이 없습니다.
 
-현재 배포 ZIP이 MLX 기본 모델만 포함해도 학습 결과 자체는 다른 운영체제에서 사용할 수 있습니다. 설치기가 MLX LoRA를 Windows/Linux용 PEFT 형식으로 변환하고, 해당 플랫폼의 Transformers 기본 모델이 없으면 Hugging Face에서 자동으로 한 번 내려받습니다. 따라서 일반 설치에는 같은 ZIP을 쓰되 인터넷 연결이 필요할 수 있습니다. 인터넷 없이 모든 플랫폼에서 설치하려면 아래의 `universal` 번들을 사용해야 합니다.
+현재 `resonance-qwen3-4b-runtime.zip`은 MLX·Transformers 기본 모델과 MLX·PEFT 학습 어댑터를 모두 담은 Universal 번들입니다. 따라서 Mac과 Windows/Linux 모두 같은 ZIP을 사용할 수 있고, 설치 중 기본 모델을 추가로 다운로드하지 않습니다. 단, 운영체제별 Python 패키지와 Windows/Linux의 NVIDIA CUDA 환경은 별도로 준비해야 합니다. ZIP 용량은 약 9.6GB입니다.
 
 ### Apple Silicon Mac
 

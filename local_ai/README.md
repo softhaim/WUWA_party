@@ -67,7 +67,7 @@ MLX 학습은 터미널 출력과 함께 다음 파일을 남깁니다.
 - `report.html`: 로컬 손실 그래프
 
 성공한 실행만 서비스 어댑터 폴더로 복사됩니다. CUDA 학습은 `Trainer` 로그와 `test_metrics.json`을 PEFT 출력 폴더에 저장합니다.
-2026-09-22 MLX 재학습 실행은 validation loss `4.151 → 3.722`, test loss `3.738`을 기록했습니다. 실행별 수치는 Git에 포함되지 않는 `runs/` 보고서를 기준으로 확인하세요.
+2026-09-25 MLX 재학습 실행은 validation loss `4.336 → 2.937`, test loss `3.142`, test perplexity `23.149`를 기록했습니다. 실행별 수치는 Git에 포함되지 않는 `runs/` 보고서를 기준으로 확인하세요.
 
 ## 배포 ZIP
 
