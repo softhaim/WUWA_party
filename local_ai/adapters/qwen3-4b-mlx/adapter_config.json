@@ -1,13 +1,13 @@
 {
-    "adapter_path": "/Users/ohjeonghwan/Documents/New project/local_ai/runs/20260922-103615-mlx-qwen3-4b/adapter",
+    "adapter_path": "local_ai/adapters/qwen3-4b-mlx",
     "batch_size": 1,
     "clear_cache_threshold": 0,
-    "config": "/Users/ohjeonghwan/Documents/New project/local_ai/configs/mlx_qwen3_4b.yaml",
+    "config": "local_ai/configs/mlx_qwen3_4b.yaml",
     "data": "local_ai/dataset",
     "fine_tune_type": "lora",
     "grad_accumulation_steps": 4,
     "grad_checkpoint": true,
-    "iters": 40,
+    "iters": 120,
     "learning_rate": 5e-06,
     "lora_parameters": {
         "keys": [
@@ -21,7 +21,7 @@
     "lr_schedule": null,
     "mask_prompt": true,
     "max_seq_length": 512,
-    "model": "/Users/ohjeonghwan/Documents/New project/local_ai/models/qwen3-4b-instruct-2507-mlx-4bit",
+    "model": "local_ai/models/qwen3-4b-instruct-2507-mlx-4bit",
     "num_layers": 12,
     "optimizer": "adamw",
     "optimizer_config": {

@@ -893,11 +893,26 @@ def chat(payload: dict[str, Any]) -> dict[str, Any]:
     messages = payload.get("messages") or []
     if not isinstance(messages, list) or not messages:
         raise ValueError("질문을 입력해 주세요.")
-    question = str(messages[-1].get("content", "")).strip()
+    # Korean IME confirmation or a fast second Enter can occasionally submit a
+    # trailing fragment (for example, "... 알려줘" followed by "줘") before
+    # the first request finishes.  Consecutive user entries belong to the same
+    # conversational turn, so merge them before intent detection and inference.
+    trailing_user_messages: list[str] = []
+    split_at = len(messages)
+    for index in range(len(messages) - 1, -1, -1):
+        item = messages[index]
+        if item.get("role") != "user":
+            break
+        content = str(item.get("content", "")).strip()
+        if content:
+            trailing_user_messages.append(content)
+        split_at = index
+    question = "\n".join(reversed(trailing_user_messages)).strip()
     if not question:
         raise ValueError("질문을 입력해 주세요.")
     if len(question) > 2000:
         raise ValueError("질문은 2,000자 이하로 입력해 주세요.")
+    messages = [*messages[:split_at], {"role": "user", "content": question}]
 
     roster = payload.get("roster") or get_roster()
     characters = load_characters()

@@ -1,4 +1,4 @@
-const state = { characters: [], roster: {}, filterElement: "", filterWeapon: "", filterRarity: "", filterRole: "", activeId: null, spineApp: null, spineLoading: null, nanokaSpineComponent: null, nanokaSpineModule: null, live2dRunId: 0, chatMessages: [], aiReady: true };
+const state = { characters: [], roster: {}, filterElement: "", filterWeapon: "", filterRarity: "", filterRole: "", activeId: null, spineApp: null, spineLoading: null, nanokaSpineComponent: null, nanokaSpineModule: null, live2dRunId: 0, chatMessages: [], aiReady: true, chatPending: false };
 const COLORS = {응결:"#173849",용융:"#4c2520",전도:"#312548",기류:"#193d36",회절:"#4a4120",인멸:"#3d2545"};
 const ELEMENTS = ["응결","용융","전도","기류","회절","인멸"];
 const WEAPONS = ["대검","직검","권총","권갑","증폭기"];
@@ -426,13 +426,14 @@ function chatMessage(role,content,meta=""){
 }
 
 async function sendChat(event){
-  event?.preventDefault();const input=$("#chatInput"),question=input.value.trim();if(!question)return;
+  event?.preventDefault();const input=$("#chatInput"),question=input.value.trim();if(!question||state.chatPending)return;
   if(!state.aiReady){$("#aiSetupNotice").hidden=false;return;}
+  state.chatPending=true;
   input.value="";input.style.height="auto";state.chatMessages.push({role:"user",content:question});chatMessage("user",question);
-  const loading=chatMessage("assistant","보유풀과 대체 조합을 함께 비교하고 있어요…","조합 분석 중");$("#chatSend").disabled=true;
+  const loading=chatMessage("assistant","보유풀과 대체 조합을 함께 비교하고 있어요…","조합 분석 중");$("#chatSend").disabled=true;input.disabled=true;
   try{const result=await api("/api/chat",{method:"POST",body:JSON.stringify({messages:state.chatMessages,roster:state.roster,team_count:$("#teamCount").value})});loading.remove();state.chatMessages.push({role:"assistant",content:result.answer});chatMessage("assistant",result.answer,(result.sources||[]).join(" · ")||"앱 데이터");}
   catch(error){loading.remove();chatMessage("assistant",error.message,"가이드를 사용할 수 없습니다");}
-  finally{$("#chatSend").disabled=false;input.focus();}
+  finally{state.chatPending=false;$("#chatSend").disabled=false;input.disabled=false;input.focus();}
 }
 
 function resetChat(){state.chatMessages=[];$("#chatMessages").innerHTML="";chatMessage("assistant","안녕하세요. 내 보유 캐릭터를 기준으로 파티 구성과 육성 순서를 같이 살펴볼게요.","보유 데이터 · 메타 조합 기반");}
@@ -472,7 +473,7 @@ async function init(){
   $("#maxLevel").addEventListener("click",()=>{$("#dialogLevel").value=90;markOwned();});
   document.querySelectorAll(".nav-link").forEach(x=>x.addEventListener("click",()=>showView(x.dataset.view)));
   $("#chatForm").addEventListener("submit",sendChat);
-  $("#chatInput").addEventListener("keydown",event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendChat(event);}});
+  $("#chatInput").addEventListener("keydown",event=>{if(event.isComposing||event.keyCode===229)return;if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendChat(event);}});
   $("#chatInput").addEventListener("input",event=>{event.target.style.height="auto";event.target.style.height=`${Math.min(event.target.scrollHeight,140)}px`;});
   $("#quickPrompts").addEventListener("click",event=>{const button=event.target.closest("button");if(!button)return;$("#chatInput").value=button.textContent;$("#chatInput").focus();});
   $("#clearChat").addEventListener("click",resetChat);

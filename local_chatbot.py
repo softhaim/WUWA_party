@@ -319,9 +319,16 @@ def answer_is_roster_safe(
         for team in recommendation.get("teams", [])
     }
     for line in answer.splitlines():
-        # Only a slash-separated line is treated as a concrete three-member
-        # party. Prose may legitimately compare members from multiple teams.
-        if line.count("/") < 2:
+        # Party-like lines can use '/', '+', arrows, or a score.  Checking only
+        # slash-separated output let invented combinations such as
+        # "모니에 → A + B" pass validation.
+        concrete_party_line = (
+            line.count("/") >= 2
+            or "+" in line
+            or "→" in line
+            or bool(re.search(r"\d+(?:\.\d+)?\s*점", line))
+        )
+        if not concrete_party_line:
             continue
         line_ids = {
             character["id"] for character in characters

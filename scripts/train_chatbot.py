@@ -64,8 +64,20 @@ def finalize(run_dir: Path, manifest: dict, code: int) -> None:
     if code != 0:
         raise SystemExit(code)
     DEPLOY_ADAPTER.mkdir(parents=True, exist_ok=True)
-    for filename in ("adapter_config.json", "adapters.safetensors"):
-        shutil.copy2(run_dir / "adapter" / filename, DEPLOY_ADAPTER / filename)
+    shutil.copy2(run_dir / "adapter" / "adapters.safetensors", DEPLOY_ADAPTER / "adapters.safetensors")
+    # mlx_lm records the trainer machine's absolute paths. They are metadata,
+    # not runtime requirements, so publish portable project-relative paths.
+    adapter_config = json.loads((run_dir / "adapter" / "adapter_config.json").read_text(encoding="utf-8"))
+    adapter_config.update({
+        "adapter_path": "local_ai/adapters/qwen3-4b-mlx",
+        "config": "local_ai/configs/mlx_qwen3_4b.yaml",
+        "data": "local_ai/dataset",
+        "model": "local_ai/models/qwen3-4b-instruct-2507-mlx-4bit",
+    })
+    (DEPLOY_ADAPTER / "adapter_config.json").write_text(
+        json.dumps(adapter_config, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     (RUNS / "latest.txt").write_text(manifest["run_id"] + "\n", encoding="utf-8")
     print(f"\n[done] 서비스 어댑터: {DEPLOY_ADAPTER}\n[view] 학습 보고서: {run_dir / 'report.html'}")
 

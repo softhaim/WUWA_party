@@ -24,6 +24,14 @@ DEFAULT_BUNDLE_NAMES = (
 ALLOWED_ROOTS = {"models", "adapters"}
 
 
+def adapter_iterations(adapter: Path) -> int:
+    """Return the training step count used for a bundled/deployed MLX adapter."""
+    try:
+        return int(json.loads((adapter / "adapter_config.json").read_text(encoding="utf-8")).get("iters", 0))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return 0
+
+
 def auto_backend() -> str:
     apple = platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}
     return "mlx" if apple else "transformers"
@@ -97,7 +105,12 @@ def main() -> None:
         selected = auto_backend() if args.backend == "auto" else args.backend
         adapter_source = temp / "adapters"
         if adapter_source.exists():
-            shutil.copytree(adapter_source, LOCAL_AI / "adapters", dirs_exist_ok=True)
+            bundled_mlx = adapter_source / "qwen3-4b-mlx"
+            deployed_mlx = LOCAL_AI / "adapters" / "qwen3-4b-mlx"
+            if adapter_iterations(deployed_mlx) > adapter_iterations(bundled_mlx):
+                print("[adapter] ZIP보다 새 학습 어댑터가 이미 있어 기존 파일을 유지합니다.")
+            else:
+                shutil.copytree(adapter_source, LOCAL_AI / "adapters", dirs_exist_ok=True)
         model_source = temp / "models"
         if model_source.exists():
             for model_dir in model_source.iterdir():

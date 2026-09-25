@@ -8,7 +8,7 @@ data: local_ai/dataset
 seed: 20260921
 num_layers: 12
 batch_size: 1
-iters: 40
+iters: 120
 val_batches: -1
 learning_rate: 0.000005
 steps_per_report: 2

@@ -143,6 +143,12 @@ class ResonanceLabTests(unittest.TestCase):
         adapter = server.ROOT / "local_ai" / "adapters" / "qwen3-4b-cuda"
         self.assertTrue(local_chatbot._peft_adapter_ready(adapter))
 
+    def test_deployed_mlx_adapter_metadata_is_portable(self):
+        config = json.loads((server.ROOT / "local_ai" / "adapters" / "qwen3-4b-mlx" / "adapter_config.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["adapter_path"], "local_ai/adapters/qwen3-4b-mlx")
+        self.assertFalse(Path(config["adapter_path"]).is_absolute())
+        self.assertFalse(Path(config["model"]).is_absolute())
+
     def test_training_log_parser_handles_terminal_period(self):
         metric = parse_metric("Test loss 4.111, Test ppl 61.019.")
         self.assertEqual(metric, {"type": "test", "loss": 4.111, "perplexity": 61.019})
@@ -170,6 +176,13 @@ class ResonanceLabTests(unittest.TestCase):
             with patch.object(install_model_bundle, "DEFAULT_BUNDLE_DIR", bundle_dir):
                 self.assertEqual(install_model_bundle.find_bundle(None), bundle.resolve())
 
+    def test_model_installer_can_detect_newer_deployed_adapter(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            adapter = Path(temp_name)
+            (adapter / "adapter_config.json").write_text('{"iters": 120}', encoding="utf-8")
+            self.assertEqual(install_model_bundle.adapter_iterations(adapter), 120)
+            self.assertEqual(install_model_bundle.adapter_iterations(adapter / "missing"), 0)
+
     def test_chat_ui_renders_safe_basic_markdown_and_missing_model_notice(self):
         index = (server.STATIC / "index.html").read_text(encoding="utf-8")
         app = (server.STATIC / "app.js").read_text(encoding="utf-8")
@@ -178,6 +191,8 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn('<strong>$1</strong>', app)
         self.assertIn('class="chat-bullet"', app)
         self.assertIn('api("/api/ai/status")', app)
+        self.assertIn("event.isComposing||event.keyCode===229", app)
+        self.assertIn("chatPending", app)
 
     def test_static_bundle_supports_direct_file_open(self):
         index = (server.STATIC / "index.html").read_text(encoding="utf-8")
@@ -402,6 +417,36 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn("카르티시아 / 샤콘 / 치사", result["answer"])
         self.assertNotIn("현재 보유풀 기준 고점 파티 12개", result["answer"])
         self.assertEqual(roster["chisa"]["max_uses"], original)
+
+    def test_split_korean_ime_question_is_merged_before_intent_detection(self):
+        roster = server.get_roster()
+        with patch.object(local_chatbot.chatbot, "answer") as answer:
+            result = server.chat({
+                "messages": [
+                    {"role": "user", "content": "모니에 2번 사용 가능할 때, 내 파티풀 기준 배분을 알려"},
+                    {"role": "user", "content": "줘"},
+                ],
+                "roster": roster,
+                "team_count": 3,
+            })
+        answer.assert_not_called()
+        self.assertIn("모니에 사용처는 2개 파티", result["answer"])
+        self.assertIn("청초 / 린네 / 모니에", result["answer"])
+        self.assertIn("루시 / 레베카 / 모니에", result["answer"])
+        self.assertNotIn("에이메스 / 카르티시아", result["answer"])
+
+    def test_roster_safety_rejects_arrow_plus_recombined_party(self):
+        characters = server.load_characters()
+        roster = server.get_roster()
+        recommendation = server.recommend({"roster": roster, "team_count": "all"})
+        hallucination = "- **모니에 → 에이메스 + 카르티시아** — 96.1점"
+        self.assertFalse(local_chatbot.answer_is_roster_safe(
+            hallucination,
+            "모니에를 2번 쓸 때 배분을 알려줘",
+            recommendation,
+            characters,
+            roster,
+        ))
 
     def test_chat_api_passes_open_ended_character_context_to_local_model(self):
         roster = {"hiyuki": {"owned": True, "level": 90, "sequence": 2, "build_status": "완성", "max_uses": 1}}
