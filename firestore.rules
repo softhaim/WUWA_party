@@ -1,0 +1,40 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      allow read, create, update: if isOwner(userId);
+      allow delete: if false;
+
+      match /roster/{characterId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.character_id == characterId
+          && request.resource.data.owned is bool
+          && request.resource.data.sequence is int
+          && request.resource.data.sequence >= 0
+          && request.resource.data.sequence <= 6
+          && request.resource.data.level is int
+          && request.resource.data.level >= 1
+          && request.resource.data.level <= 90
+          && request.resource.data.build_status in ['미육성', '육성 중', '실전 가능', '완성']
+          && request.resource.data.max_uses is int
+          && request.resource.data.max_uses >= 0
+          && request.resource.data.max_uses <= 10
+          && request.resource.data.signature_weapon is bool
+          && request.resource.data.weapon_rank is int
+          && request.resource.data.weapon_rank >= 1
+          && request.resource.data.weapon_rank <= 5;
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -14,6 +14,38 @@ from scripts.training_metrics import parse_metric
 
 
 class ResonanceLabTests(unittest.TestCase):
+    def test_firebase_hosting_isolated_from_local_ai_runtime(self):
+        root = Path(__file__).resolve().parents[1]
+        config = json.loads((root / "firebase.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["hosting"]["public"], "dist/firebase")
+        self.assertNotEqual(config["hosting"]["public"], ".")
+        builder = (root / "scripts" / "build_firebase_site.py").read_text(encoding="utf-8")
+        self.assertNotIn('copytree(ROOT / "local_ai"', builder)
+        self.assertNotIn('copytree(ROOT / ".venv-ai"', builder)
+
+    def test_cloud_ui_removes_local_ai_guide_and_uses_authenticated_storage(self):
+        root = Path(__file__).resolve().parents[1]
+        cloud_html = (root / "cloud" / "index.html").read_text(encoding="utf-8")
+        cloud_runtime = (root / "cloud" / "cloud-runtime.js").read_text(encoding="utf-8")
+        rules = (root / "firestore.rules").read_text(encoding="utf-8")
+        self.assertNotIn("AI 가이드", cloud_html)
+        self.assertIn("Google로 로그인", cloud_html)
+        self.assertIn('collection(db,"users",runtime.user.uid,"roster")', cloud_runtime)
+        self.assertIn("request.auth.uid == userId", rules)
+        self.assertIn("recommendInBrowser", cloud_runtime)
+
+    def test_cloud_planner_does_not_require_functions_or_fireworks(self):
+        root = Path(__file__).resolve().parents[1]
+        environment = (root / "cloud" / "cloud-env.example.js").read_text(encoding="utf-8")
+        planner = (root / "cloud" / "cloud-planner.js").read_text(encoding="utf-8")
+        builder = (root / "scripts" / "build_firebase_site.py").read_text(encoding="utf-8")
+        self.assertIn("useCloudFunctions: false", environment)
+        self.assertIn("YOUR_FIREBASE_WEB_API_KEY", environment)
+        self.assertNotRegex(environment, r"AIza[0-9A-Za-z_-]{20,}")
+        self.assertIn("recommendInBrowser", planner)
+        self.assertIn('"team_rules.json"', builder)
+        self.assertIn('"live2d-manifest.json"', builder)
+
     def test_chat_backend_is_selected_by_platform(self):
         with patch("local_chatbot.platform.system", return_value="Darwin"), patch(
             "local_chatbot.platform.machine", return_value="arm64"

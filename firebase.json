@@ -1,0 +1,31 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "public": "dist/firebase",
+    "predeploy": [
+      "python3 scripts/build_firebase_site.py"
+    ],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "/characters/**",
+        "headers": [{"key": "Cache-Control", "value": "public,max-age=604800,immutable"}]
+      },
+      {
+        "source": "/live2d-assets/**",
+        "headers": [{"key": "Cache-Control", "value": "public,max-age=31536000,immutable"}]
+      },
+      {
+        "source": "/data/live2d-manifest.json",
+        "headers": [{"key": "Cache-Control", "value": "public,max-age=3600"}]
+      }
+    ]
+  }
+}

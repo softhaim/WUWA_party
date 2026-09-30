@@ -1,4 +1,5 @@
-const state = { characters: [], roster: {}, filterElement: "", filterWeapon: "", filterRarity: "", filterRole: "", activeId: null, spineApp: null, spineLoading: null, nanokaSpineComponent: null, nanokaSpineModule: null, live2dRunId: 0, chatMessages: [], aiReady: true, chatPending: false };
+const IS_CLOUD = Boolean(window.RESONANCE_CLOUD_CONFIG);
+const state = { characters: [], roster: {}, filterElement: "", filterWeapon: "", filterRarity: "", filterRole: "", activeId: null, spineApp: null, spineLoading: null, nanokaSpineComponent: null, nanokaSpineModule: null, live2dRunId: 0, chatMessages: [], aiReady: true, chatPending: false, cloud: null, user: null };
 const COLORS = {응결:"#173849",용융:"#4c2520",전도:"#312548",기류:"#193d36",회절:"#4a4120",인멸:"#3d2545"};
 const ELEMENTS = ["응결","용융","전도","기류","회절","인멸"];
 const WEAPONS = ["대검","직검","권총","권갑","증폭기"];
@@ -13,6 +14,7 @@ const SPINE_SCRIPTS = [
 const NANOKA_LIVE2D_PREFIX = "https://static.nanoka.cc/assets/ww/";
 
 function localLive2dUrl(value){
+  if(IS_CLOUD) return value;
   if(typeof value!=="string"||!value.startsWith(NANOKA_LIVE2D_PREFIX)) return value;
   return `${API_BASE}/api/live2d-assets/${value.slice(NANOKA_LIVE2D_PREFIX.length)}`;
 }
@@ -40,9 +42,72 @@ function installLive2dLocalCacheProxy(){
   }
 }
 
-installLive2dLocalCacheProxy();
+if(!IS_CLOUD) installLive2dLocalCacheProxy();
+
+async function initializeCloud(){
+  if(!IS_CLOUD)return;
+  const module=await import("./cloud-runtime.js?v=20260930b");
+  state.cloud=await module.createCloudRuntime(window.RESONANCE_CLOUD_CONFIG);
+  state.user=state.cloud.user;
+  renderAuthState();
+  state.cloud.onAuthChanged(user=>{
+    const changed=state.user?.uid!==user?.uid;
+    state.user=user;
+    state.cloud.user=user;
+    renderAuthState();
+    if(changed) reloadCloudRoster();
+  });
+}
+
+async function reloadCloudRoster(){
+  if(!IS_CLOUD||!state.cloud)return;
+  state.roster=state.user?await state.cloud.loadRoster():{};
+  setSaveState(state.user?"saved":"",state.user?"계정에 저장됨":"로그인 후 계정에 저장할 수 있어요");
+  renderGrid();
+  if(state.user)state.cloud.preloadLive2d(Object.entries(state.roster).filter(([,value])=>value.owned).map(([id])=>id)).catch(console.debug);
+  $("#teamResults").innerHTML="";
+  $("#recommendMessage").textContent=state.user?"실전 가능한 보유 캐릭터를 우선 사용합니다.":"로그인하면 내 보유풀을 저장하고 추천을 받을 수 있어요.";
+}
+
+function renderAuthState(){
+  if(!IS_CLOUD)return;
+  const button=$("#authButton"), profile=$("#authProfile"), name=$("#authName"), avatar=$("#authAvatar");
+  if(!button)return;
+  button.textContent=state.user?"로그아웃":"Google로 로그인";
+  profile.hidden=!state.user;
+  if(state.user){
+    name.textContent=state.user.displayName||state.user.email||"사용자";
+    avatar.src=state.user.photoURL||"";
+    avatar.hidden=!state.user.photoURL;
+  }
+}
+
+async function toggleAuth(){
+  if(!state.cloud)return;
+  try{
+    if(state.user)await state.cloud.signOut();
+    else await state.cloud.signIn();
+  }catch(error){toast(error.message||"로그인하지 못했습니다.");}
+}
 
 async function api(path, options={}) {
+  if(IS_CLOUD){
+    if(!state.cloud)throw new Error("클라우드 연결을 준비하고 있어요.");
+    if(path==="/api/characters")return state.cloud.loadCharacters();
+    if(path==="/api/roster"&&(!options.method||options.method==="GET"))return state.user?state.cloud.loadRoster():{};
+    if(path==="/api/storage")return {last_saved:null,engine:"Cloud Firestore",persistent:true};
+    if(path==="/api/ai/status")return {ready:false,bundle_required:false};
+    if(path==="/api/roster"&&options.method==="POST"){
+      if(!state.user)throw new Error("캐릭터 정보를 저장하려면 먼저 로그인해 주세요.");
+      return state.cloud.saveRoster(JSON.parse(options.body||"[]"));
+    }
+    if(path==="/api/recommend"&&options.method==="POST"){
+      if(!state.user)throw new Error("내 보유풀로 추천받으려면 먼저 로그인해 주세요.");
+      const payload=JSON.parse(options.body||"{}");
+      return state.cloud.recommend({team_count:payload.team_count});
+    }
+    throw new Error(`지원하지 않는 클라우드 요청입니다: ${path}`);
+  }
   let response;
   try { response = await fetch(`${API_BASE}${path}`, {headers:{"Content-Type":"application/json"}, ...options}); }
   catch (_) { throw new Error("로컬 서버에 연결할 수 없습니다. python3 server.py 실행 상태를 확인해 주세요."); }
@@ -71,7 +136,7 @@ function formatChatContent(value){
   }).join("<br>");
 }
 function setSaveState(mode,text){const el=$("#saveState");el.className=`save-state ${mode}`;el.querySelector("span").textContent=text;}
-function savedLabel(value){if(!value)return "SQLite 저장 준비됨";const d=new Date(value.includes("T")?value:`${value.replace(" ","T")}Z`);return `DB 저장 확인 · ${Number.isNaN(d.getTime())?value:d.toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`;}
+function savedLabel(value){if(!value)return IS_CLOUD?"계정 저장 준비됨":"SQLite 저장 준비됨";const d=new Date(value.includes("T")?value:`${value.replace(" ","T")}Z`);return `${IS_CLOUD?"계정":"DB"} 저장 확인 · ${Number.isNaN(d.getTime())?value:d.toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`;}
 function markOwned(){ $("#dialogOwned").checked=true; }
 
 function loadScriptOnce(src){
@@ -383,8 +448,8 @@ async function toggleLive2d(force){
 async function saveActive(event){
   event.preventDefault(); const r=rosterOf(state.activeId);
   Object.assign(r,{owned:$("#dialogOwned").checked,sequence:+$("#dialogSequence").value,level:+$("#dialogLevel").value,build_status:$("#dialogBuild").value,max_uses:+$("#dialogUses").value,signature_weapon:$("#dialogSignature").checked,weapon_rank:+$("#dialogWeaponRank").value});
-  setSaveState("saving","SQLite에 저장 중…");
-  try{const result=await api("/api/roster",{method:"POST",body:JSON.stringify([r])});setSaveState("saved",savedLabel(result.saved_at));$("#characterDialog").close();renderGrid();toast("캐릭터 설정을 DB에 저장했습니다.");}
+  setSaveState("saving",IS_CLOUD?"계정에 저장 중…":"SQLite에 저장 중…");
+  try{const result=await api("/api/roster",{method:"POST",body:JSON.stringify([r])});setSaveState("saved",savedLabel(result.saved_at));$("#characterDialog").close();renderGrid();toast(IS_CLOUD?"캐릭터 설정을 내 계정에 저장했어요.":"캐릭터 설정을 DB에 저장했습니다.");}
   catch(error){setSaveState("error","저장 실패 · 다시 시도해 주세요");toast(error.message);}
 }
 
@@ -392,7 +457,7 @@ async function recommend(){
   const button=$("#recommendButton"); button.disabled=true; button.textContent="구성 계산 중…";
   try{
     const result=await api("/api/recommend",{method:"POST",body:JSON.stringify({team_count:$("#teamCount").value,roster:state.roster})});
-    $("#recommendMessage").textContent=result.message;
+    $("#recommendMessage").textContent=result.ai_summary||result.message;
     const teamCard=t=>`<article class="team-card"><div class="team-head"><h3>TEAM ${String(t.id).padStart(2,"0")} <small>${escapeHtml(t.confidence)} 신뢰도 · 육성 ${t.readiness}%</small></h3><span class="score">${t.score}</span></div><div class="team-members">${t.members.map(m=>`<div class="member"><img src="${imageUrl(m.image)}" alt="${escapeHtml(m.name_ko)}" referrerpolicy="no-referrer"><div><strong>${escapeHtml(m.name_ko)}</strong><small>${escapeHtml(m.slot||m.role)}</small></div></div>`).join("")}</div><div class="team-tags">${(t.tags||[]).map(tag=>`<span>${escapeHtml(tag)}</span>`).join("")}</div><p class="team-reason">${escapeHtml(t.reason)}</p>${t.score_details?`<p class="team-reason">조합 ${t.score_details.composition} · 최신성 ${t.score_details.meta} · 돌파/무기 ${t.score_details.investment} · 육성 ${t.score_details.build}</p>`:""}</article>`;
     const configs=result.configurations||[];
     $("#teamResults").innerHTML=configs.length?`<div class="configuration-tabs" role="tablist" aria-label="추천 구성 선택">${configs.map((config,index)=>`<button type="button" role="tab" aria-selected="${index===0}" class="${index===0?"active":""}" data-config-index="${index}"><strong>${escapeHtml(config.label.replace("추천 구성 ",""))}</strong><span>${config.team_count}팀 · ${config.total_score}</span></button>`).join("")}</div>${configs.map((config,index)=>`<section class="configuration ${index===0?"active":""}" data-config-panel="${index}" ${index===0?"":"hidden"}><div class="configuration-head"><div><span>ALTERNATIVE ${String(index+1).padStart(2,"0")}</span><h2>${escapeHtml(config.label)}</h2></div><p>${config.team_count}개 파티 · 조합 지수 ${config.total_score} · 전투 점수 ${config.combat_score}</p></div><div class="configuration-teams">${config.teams.map(teamCard).join("")}</div></section>`).join("")}`:`<div class="empty">${escapeHtml(result.message)}</div>`;
@@ -415,7 +480,7 @@ function selectConfiguration(index){
 
 function toast(message){const el=$("#toast");el.textContent=message;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),1800);}
 function showView(view){
-  $("#rosterView").hidden=view!=="roster";$("#plannerView").hidden=view!=="planner";$("#guideView").hidden=view!=="guide";
+  $("#rosterView").hidden=view!=="roster";$("#plannerView").hidden=view!=="planner";if($("#guideView"))$("#guideView").hidden=view!=="guide";
   document.querySelectorAll(".nav-link").forEach(x=>x.classList.toggle("active",x.dataset.view===view));
 }
 
@@ -452,9 +517,15 @@ function renderAiStatus(status){
 }
 
 async function init(){
+  await initializeCloud();
   for(let i=0;i<=6;i++) $("#dialogSequence").insertAdjacentHTML("beforeend",`<option value="${i}">S${i}</option>`);
-  const [characters,roster,storage,aiStatus]=await Promise.all([api("/api/characters"),api("/api/roster"),api("/api/storage"),api("/api/ai/status")]); state.characters=characters.map(c=>({...c,image:imageUrl(c.image),detail_image:imageUrl(c.detail_image),element_icon:imageUrl(c.element_icon),weapon_icon:imageUrl(c.weapon_icon)})); state.roster=roster;setSaveState("saved",savedLabel(storage.last_saved));renderAiStatus(aiStatus);
+  const [characters,roster,storage,aiStatus]=await Promise.all([api("/api/characters"),api("/api/roster"),api("/api/storage"),api("/api/ai/status")]); state.characters=characters.map(c=>({...c,image:imageUrl(c.image),detail_image:imageUrl(c.detail_image),element_icon:imageUrl(c.element_icon),weapon_icon:imageUrl(c.weapon_icon)})); state.roster=roster;setSaveState("saved",state.user||!IS_CLOUD?savedLabel(storage.last_saved):"로그인 후 계정에 저장할 수 있어요");if(!IS_CLOUD)renderAiStatus(aiStatus);
   renderFilters();renderGrid();
+  if(IS_CLOUD){
+    ensureNanokaSpineModule().catch(console.debug);
+    const owned=Object.entries(state.roster).filter(([,value])=>value.owned).map(([id])=>id);
+    state.cloud.preloadLive2d(owned).catch(console.debug);
+  }
   ["#searchInput","#ownedOnly"].forEach(s=>$(s).addEventListener("input",renderGrid));
   $("#filterPanel").addEventListener("click",e=>{
     const button=e.target.closest("[data-filter-type]");
@@ -467,16 +538,20 @@ async function init(){
     renderFilters();renderGrid();
   });
   $("#characterGrid").addEventListener("click",e=>{const card=e.target.closest("[data-id]");if(card)openCharacter(card.dataset.id);});
+  $("#characterGrid").addEventListener("pointerover",e=>{const card=e.target.closest("[data-id]");if(IS_CLOUD&&card)state.cloud.preloadLive2d([card.dataset.id],false).catch(console.debug);});
   $("#teamResults").addEventListener("click",e=>{const button=e.target.closest("[data-config-index]");if(button)selectConfiguration(button.dataset.configIndex);});
   $("#saveCharacter").addEventListener("click",saveActive);$("#recommendButton").addEventListener("click",recommend);$("#dialogLiveToggle").addEventListener("click",toggleLive2d);
   ["#dialogSequence","#dialogLevel","#dialogBuild","#dialogUses","#dialogSignature","#dialogWeaponRank"].forEach(s=>$(s).addEventListener("input",markOwned));
   $("#maxLevel").addEventListener("click",()=>{$("#dialogLevel").value=90;markOwned();});
   document.querySelectorAll(".nav-link").forEach(x=>x.addEventListener("click",()=>showView(x.dataset.view)));
-  $("#chatForm").addEventListener("submit",sendChat);
-  $("#chatInput").addEventListener("keydown",event=>{if(event.isComposing||event.keyCode===229)return;if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendChat(event);}});
-  $("#chatInput").addEventListener("input",event=>{event.target.style.height="auto";event.target.style.height=`${Math.min(event.target.scrollHeight,140)}px`;});
-  $("#quickPrompts").addEventListener("click",event=>{const button=event.target.closest("button");if(!button)return;$("#chatInput").value=button.textContent;$("#chatInput").focus();});
-  $("#clearChat").addEventListener("click",resetChat);
+  if($("#chatForm")){
+    $("#chatForm").addEventListener("submit",sendChat);
+    $("#chatInput").addEventListener("keydown",event=>{if(event.isComposing||event.keyCode===229)return;if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendChat(event);}});
+    $("#chatInput").addEventListener("input",event=>{event.target.style.height="auto";event.target.style.height=`${Math.min(event.target.scrollHeight,140)}px`;});
+    $("#quickPrompts").addEventListener("click",event=>{const button=event.target.closest("button");if(!button)return;$("#chatInput").value=button.textContent;$("#chatInput").focus();});
+    $("#clearChat").addEventListener("click",resetChat);
+  }
+  $("#authButton")?.addEventListener("click",toggleAuth);
 }
 
-init().catch(error=>{setSaveState("error","로컬 서버 연결 필요");$("#characterGrid").innerHTML=`<div class="empty">앱을 불러오지 못했습니다: ${escapeHtml(error.message)}<br><br>터미널에서 <b>python3 server.py</b>를 실행해 주세요.</div>`;console.error(error);});
+init().catch(error=>{setSaveState("error",IS_CLOUD?"서비스 연결 실패":"로컬 서버 연결 필요");$("#characterGrid").innerHTML=`<div class="empty">앱을 불러오지 못했습니다: ${escapeHtml(error.message)}${IS_CLOUD?"":"<br><br>터미널에서 <b>python3 server.py</b>를 실행해 주세요."}</div>`;console.error(error);});
