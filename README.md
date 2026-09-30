@@ -241,6 +241,8 @@ firebase deploy --only hosting,firestore
 - API 제한: Firebase에서 사용하는 API만 허용
 - Firebase 외 유료 Google API는 별도 키로 분리
 
+실제 키가 Git 기록이나 외부 문서에 들어갔다면 해당 값을 다시 사용하지 마세요. Google Cloud Console의 사용자 인증 정보에서 키를 교체한 뒤 새 값을 로컬 `cloud/cloud-env.js`에만 입력하고 Hosting을 다시 배포하세요. 새 설정으로 로그인과 로스터 저장을 확인한 다음 이전 키를 삭제하면 됩니다.
+
 모델 가중치는 Git에 포함되지 않으므로 로컬 AI까지 복원하려면 [모델 번들](https://drive.google.com/drive/folders/1TcNuDnVOnchhMmfK9phJ_TMabgfWhUC8?usp=sharing)을 다시 설치해야 합니다.
 
 ### 테스트
