@@ -2,6 +2,20 @@
 
 명조: 워더링 웨이브의 보유 캐릭터와 육성 상태를 기록하고, 현재 보유풀에서 만들 수 있는 파티를 추천받는 웹 앱입니다.
 
+## 화면 미리보기
+
+### 캐릭터 관리
+
+<img width="1539" height="983" alt="Resonance Lab 캐릭터 관리 화면" src="https://github.com/user-attachments/assets/d35a3fb8-6891-4b36-a050-c14363ef6222" />
+
+### 파티 추천
+
+<img width="1539" height="983" alt="Resonance Lab 파티 추천 화면" src="https://github.com/user-attachments/assets/601039e9-91cc-4281-a49f-06bd55b0377a" />
+
+### AI 가이드
+
+<img width="1617" height="979" alt="Resonance Lab 로컬 AI 가이드 화면" src="https://github.com/user-attachments/assets/f6081a7b-fb7f-4475-aa4f-fe2f8ecfe411" />
+
 ## 바로 사용하기
 
 설치 없이 이용하려면 아래 공개 웹에 접속하세요.
@@ -68,19 +82,6 @@ AI 응답이 일시적으로 생성되지 않으면 잠시 뒤 다시 시도해 
 
 서로 겹치는 핵심 캐릭터가 있으면 한 파티만 강하게 만드는 대신, 완성 가능한 고점 파티의 수와 전체 점수를 비교합니다. 억지로 맞지 않는 조합을 채우기보다 실제로 사용할 수 있는 조합을 우선합니다.
 
-## 화면 미리보기
-
-### 캐릭터 관리
-
-<img width="1539" height="983" alt="Resonance Lab 캐릭터 관리 화면" src="https://github.com/user-attachments/assets/d35a3fb8-6891-4b36-a050-c14363ef6222" />
-
-### 파티 추천
-
-<img width="1539" height="983" alt="Resonance Lab 파티 추천 화면" src="https://github.com/user-attachments/assets/601039e9-91cc-4281-a49f-06bd55b0377a" />
-
-### AI 가이드
-
-<img width="1617" height="979" alt="Resonance Lab 로컬 AI 가이드 화면" src="https://github.com/user-attachments/assets/f6081a7b-fb7f-4475-aa4f-fe2f8ecfe411" />
 
 ## 웹 버전과 로컬 버전
 
