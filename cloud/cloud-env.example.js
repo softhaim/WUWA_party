@@ -9,5 +9,12 @@ window.RESONANCE_CLOUD_CONFIG = {
   messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
   appId: "YOUR_FIREBASE_APP_ID",
   functionsRegion: "asia-northeast3",
-  useCloudFunctions: false
+  useCloudFunctions: false,
+  // Firebase Console > App Check > 웹 앱에 등록한 reCAPTCHA Enterprise 사이트 키입니다.
+  // 사이트 키는 브라우저에 공개되는 식별자이며 비밀 키가 아닙니다.
+  appCheckSiteKey: "YOUR_RECAPTCHA_ENTERPRISE_SITE_KEY",
+  appCheckProvider: "enterprise",
+  aiEnabled: true,
+  aiModel: "gemini-3.8-flash",
+  aiFallbackModel: "gemini-3.1-flash-lite"
 };

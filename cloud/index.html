@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="로그인한 보유 캐릭터와 육성도를 바탕으로 파티를 설계하는 명조 로스터 플래너">
   <title>Resonance Lab — 명조 파티 플래너</title>
-  <link rel="stylesheet" href="./styles.css?v=cloud-20261001-mobile-live2d-position">
+  <link rel="stylesheet" href="./styles.css?v=cloud-20261001-firebase-ai4">
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="#"><span class="brand-mark">R</span><span>RESONANCE <b>LAB</b></span></a>
-    <nav><button class="nav-link active" data-view="roster">캐릭터</button><button class="nav-link" data-view="planner">파티 플래너</button></nav>
+    <nav><button class="nav-link active" data-view="roster">캐릭터</button><button class="nav-link" data-view="planner">파티 플래너</button><button class="nav-link" data-view="guide">AI 가이드</button></nav>
     <div class="cloud-account">
       <div class="auth-profile" id="authProfile" hidden><img id="authAvatar" alt=""><span id="authName"></span></div>
       <button class="auth-button" id="authButton" type="button">Google로 로그인</button>
@@ -38,6 +38,30 @@
       <div class="planner-controls"><label>구성할 파티 수 <select id="teamCount"><option>1</option><option>2</option><option selected>3</option><option>4</option><option value="all">전체</option></select></label><p id="recommendMessage">로그인하면 내 보유풀을 저장하고 추천을 받을 수 있어요.</p></div>
       <div class="team-results" id="teamResults"></div>
     </section>
+
+    <section id="guideView" hidden>
+      <div class="hero compact guide-hero">
+        <div><p class="eyebrow">RESONANCE GUIDE</p><h1>육성 가이드</h1><p>로그인한 계정의 보유 캐릭터와 검증된 파티 조합을 바탕으로 답해요.</p></div>
+      </div>
+      <div class="guide-layout">
+        <aside class="guide-side">
+          <span class="side-label">QUICK QUESTIONS</span><h2>무엇을 물어볼까요?</h2><p>현재 보유풀에서 궁금한 상황을 구체적으로 물어보세요.</p>
+          <div class="quick-prompts" id="quickPrompts">
+            <button type="button">내 보유풀로 고점 파티 3개 추천해 줘</button><button type="button">현재 추천에서 핵심 서포터 배분을 설명해 줘</button><button type="button">육성이 부족한 캐릭터 중 누구부터 키워야 해?</button><button type="button">파티 점수가 깎이는 기준을 알려줘</button>
+          </div>
+        </aside>
+        <div class="chat-shell">
+          <div class="chat-head"><div><span class="bot-mark">R</span><div><strong>레조</strong><small>명조 육성 가이드</small></div></div><button type="button" id="clearChat">대화 초기화</button></div>
+          <div class="ai-setup-notice" id="aiSetupNotice" hidden>
+            <strong id="aiSetupTitle">AI 연결을 준비하고 있어요</strong>
+            <p id="aiSetupMessage">Google로 로그인하면 내 보유풀을 바탕으로 질문할 수 있어요.</p>
+          </div>
+          <div class="chat-messages" id="chatMessages" aria-live="polite"><article class="chat-message assistant"><span class="avatar">R</span><div><p>안녕하세요. 내 보유 캐릭터를 기준으로 파티 구성과 육성 순서를 같이 살펴볼게요.</p><small>보유 데이터 · 메타 조합 기반</small></div></article></div>
+          <form class="chat-compose" id="chatForm"><textarea id="chatInput" rows="1" maxlength="2000" placeholder="예: 치사를 한 번만 쓸 수 있을 때 어디에 배치해야 해?"></textarea><button type="submit" id="chatSend" aria-label="전송">↑</button></form>
+          <p class="chat-hint">Enter로 전송 · Shift+Enter로 줄바꿈 · 답변은 저장된 보유풀과 플래너 데이터를 사용해요.</p>
+        </div>
+      </div>
+    </section>
   </main>
 
   <dialog id="characterDialog">
@@ -56,6 +80,6 @@
   </dialog>
   <div class="toast" id="toast" role="status"></div>
   <script src="./cloud-env.js"></script>
-  <script src="./app.js?v=cloud-20260930b" defer></script>
+  <script src="./app.js?v=cloud-20261001-firebase-ai7" defer></script>
 </body>
 </html>

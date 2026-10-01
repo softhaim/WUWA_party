@@ -2,6 +2,8 @@ import {initializeApp} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-
 import {getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
 import {collection, doc, getDocs, getFirestore, serverTimestamp, setDoc, writeBatch} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
 import {getFunctions, httpsCallable} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-functions.js";
+import {initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app-check.js";
+import {getAI, getGenerativeModel, GoogleAIBackend} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-ai.js";
 import {recommendInBrowser} from "./cloud-planner.js";
 
 const authReady = auth => new Promise(resolve => {
@@ -23,6 +25,69 @@ const cleanRosterItem = item => {
   };
 };
 
+const compactText=(value,max=2000)=>String(value||"").replace(/\s+/g," ").trim().slice(0,max);
+
+function aiErrorText(error){
+  const raw=[error?.code,error?.status,error?.message,error?.name].filter(Boolean).join(" ");
+  if(/429|resource.?exhausted/i.test(raw)){
+    if(/capacity|overloaded/i.test(raw))return "Gemini 모델의 일시적인 처리 용량이 부족해요. 잠시 후 다시 시도해 주세요. (429)";
+    return "Gemini API 요청 한도에 도달했어요. 결제 전환 직후라면 유료 할당량 반영에 시간이 걸릴 수 있어요. (429)";
+  }
+  if(/app.?check|403|permission.?denied/i.test(raw))return "App Check 또는 Gemini API 권한을 확인해 주세요. (403)";
+  if(/404|not.?found/i.test(raw))return "설정된 Gemini 모델을 찾지 못했어요. 모델 설정을 확인해 주세요. (404)";
+  if(/400|invalid.?argument/i.test(raw))return "Gemini에 전달한 요청 형식을 처리하지 못했어요. (400)";
+  return "AI 답변을 생성하지 못했어요. 네트워크 또는 Gemini 서비스 상태를 확인해 주세요.";
+}
+
+function plannerFallback(recommendation){
+  const teams=recommendation?.configurations?.[0]?.teams||recommendation?.teams||[];
+  if(!teams.length)return recommendation?.message||"현재 보유풀에서는 검증된 파티를 구성하기 어려워요.";
+  const lines=teams.map((team,index)=>`${index+1}. **${team.members.map(member=>member.name_ko).join(" / ")}** — ${team.score}점\n${team.reason}`);
+  return `현재 보유풀과 사용 횟수를 기준으로 검증된 우선 배분은 다음과 같아요.\n\n${lines.join("\n\n")}\n\n캐릭터가 겹칠 때는 한 파티의 단일 최고점보다 완성 가능한 고점 파티 수와 전체 점수 합계를 함께 고려했어요.`;
+}
+
+function rosterForQuestion(roster,characters,question,conversationText=question){
+  const next=Object.fromEntries(Object.entries(roster||{}).map(([id,state])=>[id,{...state}]));
+  const numberWords={한:1,두:2,세:3,네:4};
+  const assumptions=[];
+  for(const character of [...characters].sort((a,b)=>b.name_ko.length-a.name_ko.length)){
+    const shadowed=characters.some(other=>other.name_ko.length>character.name_ko.length&&other.name_ko.includes(character.name_ko)&&question.includes(other.name_ko));
+    const escaped=character.name_ko.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+    const occurrences=shadowed?[]:[...conversationText.matchAll(new RegExp(`${escaped}[^,.!?;\\n]{0,24}?(\\d+|한|두|세|네)\\s*번`,"g")),...conversationText.matchAll(new RegExp(`(\\d+|한|두|세|네)\\s*번[^,.!?;\\n]{0,24}?${escaped}`,"g"))];
+    const match=occurrences.at(-1);
+    if(match&&next[character.id]?.owned){
+      const value=numberWords[match[1]]||Number(match[1]);
+      if(value>=0&&value<=10){next[character.id].max_uses=value;assumptions.push(`${character.name_ko} 최대 사용 횟수 ${value}회`);}
+    }
+    const position=shadowed?-1:question.indexOf(character.name_ko);
+    if(position<0)continue;
+    const nearby=question.slice(Math.max(0,position-20),position+character.name_ko.length+35);
+    const hypothetical=/(있다면|있다고\s*가정|보유(?:하고)?\s*있다고|뽑았다면|보유한다면)/.test(nearby);
+    if(hypothetical&&!next[character.id]?.owned){
+      const previous=next[character.id]||{};
+      next[character.id]={character_id:character.id,owned:true,sequence:Number(previous.sequence)||0,level:90,build_status:"실전 가능",max_uses:Number(previous.max_uses)||1,signature_weapon:Boolean(previous.signature_weapon),weapon_rank:Number(previous.weapon_rank)||1};
+      assumptions.push(`${character.name_ko}를 S0·Lv.90·실전 가능·1회 사용으로 임시 보유 가정`);
+    }
+  }
+  return {roster:next,assumptions};
+}
+
+function groundedAnswer(answer,recommendation,characters,roster,question,additionalApproved=[]){
+  const clean=String(answer||"").trim();
+  if(!clean)return plannerFallback(recommendation);
+  const owned=new Set(Object.entries(roster||{}).filter(([,state])=>state.owned).map(([id])=>id));
+  const asked=compactText(question,2000);
+  const invalid=characters.filter(character=>!owned.has(character.id)&&!asked.includes(character.name_ko)&&clean.includes(character.name_ko));
+  if(invalid.length)return plannerFallback(recommendation);
+  const approved=new Set([...(recommendation?.configurations||[]).flatMap(config=>config.teams).map(team=>team.members.map(member=>member.name_ko).sort().join("|")),...additionalApproved]);
+  for(const line of clean.split("\n")){
+    if((line.match(/\//g)||[]).length!==2)continue;
+    const mentioned=characters.filter(character=>line.includes(character.name_ko));
+    if(mentioned.length===3&&!approved.has(mentioned.map(character=>character.name_ko).sort().join("|")))return plannerFallback(recommendation);
+  }
+  return clean;
+}
+
 export async function createCloudRuntime(config){
   const app=initializeApp(config);
   const auth=getAuth(app);
@@ -31,6 +96,31 @@ export async function createCloudRuntime(config){
   const runtime={user:await authReady(auth),characters:null,rules:null};
   const warmed=new Set();
   let manifestPromise=null;
+  let aiModel=null;
+  let aiFallbackModel=null;
+  let aiInitError=null;
+
+  if(config.aiEnabled!==false&&config.appCheckSiteKey){
+    try{
+      if(["localhost","127.0.0.1"].includes(location.hostname))self.FIREBASE_APPCHECK_DEBUG_TOKEN=true;
+      const Provider=config.appCheckProvider==="v3"?ReCaptchaV3Provider:ReCaptchaEnterpriseProvider;
+      initializeAppCheck(app,{provider:new Provider(config.appCheckSiteKey),isTokenAutoRefreshEnabled:true});
+      const ai=getAI(app,{backend:new GoogleAIBackend()});
+      aiModel=getGenerativeModel(ai,{
+        model:config.aiModel||"gemini-3.8-flash",
+        generationConfig:{temperature:0.2,topP:0.85,maxOutputTokens:1400}
+      });
+      if(config.aiFallbackModel!==false){
+        aiFallbackModel=getGenerativeModel(ai,{
+          model:config.aiFallbackModel||"gemini-3.1-flash-lite",
+          generationConfig:{temperature:0.2,topP:0.85,maxOutputTokens:1400}
+        });
+      }
+    }catch(error){
+      aiInitError=error;
+      console.error("Firebase AI Logic initialization failed",error);
+    }
+  }
 
   runtime.onAuthChanged=callback=>onAuthStateChanged(auth,callback);
   runtime.signIn=()=>signInWithPopup(auth,new GoogleAuthProvider());
@@ -83,6 +173,83 @@ export async function createCloudRuntime(config){
       return response.data;
     }
     return recommendInBrowser({...payload,characters,rules,roster});
+  };
+  runtime.aiStatus=()=>{
+    if(config.aiEnabled===false)return {ready:false,bundle_required:false,setup_title:"AI 가이드가 비활성화되어 있어요",message:"사이트 관리자가 Firebase AI Logic을 활성화해야 해요."};
+    if(!config.appCheckSiteKey)return {ready:false,bundle_required:false,setup_title:"AI 연결 설정이 필요해요",message:"App Check 사이트 키를 cloud-env.js에 등록한 뒤 다시 배포해 주세요."};
+    if(aiInitError||!aiModel)return {ready:false,bundle_required:false,setup_title:"AI 연결을 시작하지 못했어요",message:"Firebase AI Logic과 App Check 설정을 확인해 주세요."};
+    if(!runtime.user)return {ready:false,bundle_required:false,setup_title:"로그인이 필요해요",message:"Google로 로그인하면 저장된 보유풀을 바탕으로 AI 가이드를 이용할 수 있어요."};
+    return {ready:true,bundle_required:false,provider:"Firebase AI Logic",model:config.aiModel||"gemini-3.8-flash"};
+  };
+  runtime.chat=async payload=>{
+    const status=runtime.aiStatus();
+    if(!status.ready)throw new Error(status.message);
+    const [characters,rules,roster]=await Promise.all([
+      runtime.characters||runtime.loadCharacters(),
+      runtime.loadRules(),
+      runtime.loadRoster()
+    ]);
+    const history=(payload.messages||[]).slice(-10).map(message=>({role:message.role==="assistant"?"assistant":"user",content:compactText(message.content)}));
+    const question=history.filter(message=>message.role==="user").at(-1)?.content||"현재 추천을 설명해 주세요.";
+    const conversationText=history.filter(message=>message.role==="user").slice(-4).map(message=>message.content).join("\n");
+    const scenario=rosterForQuestion(roster,characters,question,conversationText);
+    const planningRoster=scenario.roster;
+    const recommendation=recommendInBrowser({characters,rules,roster:planningRoster,team_count:payload.team_count||3});
+    const owned=characters.filter(character=>planningRoster[character.id]?.owned).map(character=>{
+      const state=planningRoster[character.id];
+      return {name:character.name_ko,role:character.role,element:character.element_ko,level:state.level,sequence:state.sequence,build:state.build_status,max_uses:state.max_uses,signature_weapon:state.signature_weapon,weapon_rank:state.weapon_rank};
+    });
+    const configurations=(recommendation.configurations||[]).slice(0,3).map(config=>({
+      label:config.label,total_score:config.total_score,
+      teams:config.teams.map(team=>({members:team.members.map(member=>({name:member.name_ko,slot:member.slot})),score:team.score,readiness:team.readiness,reason:team.reason,tags:team.tags}))
+    }));
+    const characterById=new Map(characters.map(character=>[character.id,character]));
+    const mentionedIds=new Set(characters.filter(character=>conversationText.includes(character.name_ko)&&!characters.some(other=>other.name_ko.length>character.name_ko.length&&other.name_ko.includes(character.name_ko)&&conversationText.includes(other.name_ko))).map(character=>character.id));
+    const relevantTemplates=(rules.templates||[]).filter(template=>template.members.some(id=>mentionedIds.has(id))).sort((a,b)=>(b.score||0)-(a.score||0)).slice(0,30).map(template=>({
+      members:template.members.map(id=>characterById.get(id)?.name_ko||id),score:template.score,tier:template.tier,status:template.status,patch:template.patch,label:template.label,tags:template.tags
+    }));
+    const templateKeys=relevantTemplates.map(template=>[...template.members].sort().join("|"));
+    const prompt=`당신은 명조 파티 플래너의 한국어 AI 가이드예요. 항상 친근한 존댓말(~해요, ~예요)을 사용하세요.
+
+규칙:
+- 사용자의 마지막 질문에 먼저 직접 답하고, 묻지 않은 전체 파티 목록을 습관적으로 나열하지 마세요.
+- 아래 앱 데이터만 사실로 사용하세요. 캐릭터 역할, 버프, 효과, 점수, 조합을 지어내지 마세요.
+- 내 보유풀 질문에는 보유하지 않은 캐릭터를 추천하지 마세요. 단, 사용자가 보유를 가정한 캐릭터는 아래 시나리오 가정에 따라 임시 보유로 취급하세요.
+- 파티를 제안할 때는 반드시 아래 검증된 추천 구성 또는 관련 검증 템플릿에 존재하는 3인 조합만 사용하세요.
+- 캐릭터 사용 횟수와 중복 제한은 검증된 추천 구성에 이미 반영되어 있어요.
+- 현재 최적 구성에 캐릭터가 보이지 않는다는 이유만으로 검증 조합이 없다고 결론 내리지 마세요. 관련 검증 템플릿을 확인하고, 핵심 파츠가 다른 파티와 충돌하면 그 자원 충돌을 정확히 설명하세요.
+- 가정 질문에서는 시나리오를 적용해 다시 계산된 추천 구성과 기존 보유풀의 차이를 설명하세요.
+- 사용자가 '히유키에는 수수를 쓴다'처럼 특정 배치를 명시하면 그 배치를 고정 조건으로 존중하세요. 전역 최적 구성이 그 조건과 다르면, 사용자의 조건을 지킨 답과 전역 최적안을 구분해서 설명하세요.
+- 관련 검증 템플릿의 score는 조합 자체의 기준점이고, 현재 로스터의 실제 점수는 검증된 추천 구성의 score예요. 두 점수를 혼동하지 마세요.
+- 정보가 부족하면 추측하지 말고 부족한 정보를 짧게 밝혀 주세요.
+- 중요한 결론은 **굵게**, 목록은 '- ' 또는 '1. ' 형식으로 읽기 쉽게 작성하세요.
+- 답변은 간결하게 작성하되, 선택 이유와 대체 배분의 손익을 설명하세요.
+
+메타 데이터: ${JSON.stringify({patch:rules.meta_patch,updated_at:rules.meta_updated_at,rules_version:rules.version})}
+보유 캐릭터: ${JSON.stringify(owned)}
+시나리오 가정: ${JSON.stringify(scenario.assumptions)}
+검증된 추천 구성: ${JSON.stringify(configurations)}
+질문 관련 검증 템플릿: ${JSON.stringify(relevantTemplates)}
+최근 대화: ${JSON.stringify(history)}
+
+마지막 질문: ${question}`;
+    try{
+      let result,usedModel=config.aiModel||"gemini-3.8-flash";
+      try{
+        result=await aiModel.generateContent(prompt);
+      }catch(primaryError){
+        const retryable=/429|resource.?exhausted|capacity|overloaded/i.test([primaryError?.code,primaryError?.status,primaryError?.message].filter(Boolean).join(" "));
+        if(!retryable||!aiFallbackModel)throw primaryError;
+        console.warn("Primary Gemini model unavailable; retrying with fallback",{model:usedModel,code:primaryError?.code,status:primaryError?.status});
+        usedModel=config.aiFallbackModel||"gemini-3.1-flash-lite";
+        result=await aiFallbackModel.generateContent(prompt);
+      }
+      const answer=groundedAnswer(result.response.text(),recommendation,characters,planningRoster,question,templateKeys);
+      return {answer,sources:["내 보유풀","검증된 파티 플래너",`Gemini ${usedModel}`],grounded:true};
+    }catch(error){
+      console.error("Firebase AI Logic request failed",{code:error?.code,status:error?.status,message:error?.message,name:error?.name});
+      throw new Error(aiErrorText(error));
+    }
   };
   runtime.preloadLive2d=async(characterIds=[],includeRemaining=true)=>{
     manifestPromise ||= fetch("./data/live2d-manifest.json",{cache:"force-cache"}).then(response=>response.ok?response.json():{characters:{},all:[]});

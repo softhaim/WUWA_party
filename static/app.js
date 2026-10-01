@@ -46,7 +46,7 @@ if(!IS_CLOUD) installLive2dLocalCacheProxy();
 
 async function initializeCloud(){
   if(!IS_CLOUD)return;
-  const module=await import("./cloud-runtime.js?v=20260930b");
+  const module=await import("./cloud-runtime.js?v=20261001-firebase-ai7");
   state.cloud=await module.createCloudRuntime(window.RESONANCE_CLOUD_CONFIG);
   state.user=state.cloud.user;
   renderAuthState();
@@ -55,6 +55,7 @@ async function initializeCloud(){
     state.user=user;
     state.cloud.user=user;
     renderAuthState();
+    if($("#aiSetupNotice"))renderAiStatus(state.cloud.aiStatus());
     if(changed) reloadCloudRoster();
   });
 }
@@ -96,7 +97,7 @@ async function api(path, options={}) {
     if(path==="/api/characters")return state.cloud.loadCharacters();
     if(path==="/api/roster"&&(!options.method||options.method==="GET"))return state.user?state.cloud.loadRoster():{};
     if(path==="/api/storage")return {last_saved:null,engine:"Cloud Firestore",persistent:true};
-    if(path==="/api/ai/status")return {ready:false,bundle_required:false};
+    if(path==="/api/ai/status")return state.cloud.aiStatus();
     if(path==="/api/roster"&&options.method==="POST"){
       if(!state.user)throw new Error("캐릭터 정보를 저장하려면 먼저 로그인해 주세요.");
       return state.cloud.saveRoster(JSON.parse(options.body||"[]"));
@@ -105,6 +106,10 @@ async function api(path, options={}) {
       if(!state.user)throw new Error("내 보유풀로 추천받으려면 먼저 로그인해 주세요.");
       const payload=JSON.parse(options.body||"{}");
       return state.cloud.recommend({team_count:payload.team_count});
+    }
+    if(path==="/api/chat"&&options.method==="POST"){
+      if(!state.user)throw new Error("AI 가이드를 이용하려면 먼저 로그인해 주세요.");
+      return state.cloud.chat(JSON.parse(options.body||"{}"));
     }
     throw new Error(`지원하지 않는 클라우드 요청입니다: ${path}`);
   }
@@ -128,7 +133,11 @@ function formatChatInline(value){
     .replace(/`([^`\n]+)`/g,"<code>$1</code>");
 }
 function formatChatContent(value){
-  return String(value).split("\n").map(line=>{
+  const normalized=String(value).replace(/\*{2,}\s*•\s*\*{2,}/g,"- ");
+  return normalized.split("\n").map(line=>{
+    const heading=line.match(/^\s*#{1,4}\s+(.+)$/);
+    if(heading)return `<span class="chat-heading">${formatChatInline(heading[1])}</span>`;
+    if(/^\s*---+\s*$/.test(line))return '<span class="chat-divider" aria-hidden="true"></span>';
     const bullet=line.match(/^\s*[-*]\s+(.+)$/);
     if(bullet)return `<span class="chat-bullet"><i>•</i><span>${formatChatInline(bullet[1])}</span></span>`;
     if(!line.trim())return '<span class="chat-gap" aria-hidden="true"></span>';
@@ -511,15 +520,18 @@ function renderAiStatus(status){
   if(!state.aiReady){
     $("#aiSetupTitle").textContent=status?.setup_title||"AI 실행 환경을 확인해 주세요";
     $("#aiSetupMessage").textContent=status?.message||"AI 모델 파일이 준비되지 않았습니다.";
-    $("#aiBundleLink").hidden=status?.bundle_required===false;
-    input.placeholder=status?.bundle_required===false?"AI 실행 환경을 준비한 뒤 다시 시작해 주세요.":"아래 안내에 따라 AI 모델을 먼저 설치해 주세요.";
+    const bundleLink=$("#aiBundleLink");
+    if(bundleLink)bundleLink.hidden=status?.bundle_required===false;
+    input.placeholder=status?.bundle_required===false?"로그인 또는 AI 연결 설정을 확인해 주세요.":"아래 안내에 따라 AI 모델을 먼저 설치해 주세요.";
+  }else{
+    input.placeholder="예: 치사를 한 번만 쓸 수 있을 때 어디에 배치해야 해?";
   }
 }
 
 async function init(){
   await initializeCloud();
   for(let i=0;i<=6;i++) $("#dialogSequence").insertAdjacentHTML("beforeend",`<option value="${i}">S${i}</option>`);
-  const [characters,roster,storage,aiStatus]=await Promise.all([api("/api/characters"),api("/api/roster"),api("/api/storage"),api("/api/ai/status")]); state.characters=characters.map(c=>({...c,image:imageUrl(c.image),detail_image:imageUrl(c.detail_image),element_icon:imageUrl(c.element_icon),weapon_icon:imageUrl(c.weapon_icon)})); state.roster=roster;setSaveState("saved",state.user||!IS_CLOUD?savedLabel(storage.last_saved):"로그인 후 계정에 저장할 수 있어요");if(!IS_CLOUD)renderAiStatus(aiStatus);
+  const [characters,roster,storage,aiStatus]=await Promise.all([api("/api/characters"),api("/api/roster"),api("/api/storage"),api("/api/ai/status")]); state.characters=characters.map(c=>({...c,image:imageUrl(c.image),detail_image:imageUrl(c.detail_image),element_icon:imageUrl(c.element_icon),weapon_icon:imageUrl(c.weapon_icon)})); state.roster=roster;setSaveState("saved",state.user||!IS_CLOUD?savedLabel(storage.last_saved):"로그인 후 계정에 저장할 수 있어요");renderAiStatus(aiStatus);
   renderFilters();renderGrid();
   if(IS_CLOUD){
     ensureNanokaSpineModule().catch(console.debug);
