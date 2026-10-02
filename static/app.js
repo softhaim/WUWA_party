@@ -46,7 +46,7 @@ if(!IS_CLOUD) installLive2dLocalCacheProxy();
 
 async function initializeCloud(){
   if(!IS_CLOUD)return;
-  const module=await import("./cloud-runtime.js?v=20261001-firebase-ai7");
+  const module=await import("./cloud-runtime.js?v=20261003-roster-complete2");
   state.cloud=await module.createCloudRuntime(window.RESONANCE_CLOUD_CONFIG);
   state.user=state.cloud.user;
   renderAuthState();
@@ -105,7 +105,7 @@ async function api(path, options={}) {
     if(path==="/api/recommend"&&options.method==="POST"){
       if(!state.user)throw new Error("내 보유풀로 추천받으려면 먼저 로그인해 주세요.");
       const payload=JSON.parse(options.body||"{}");
-      return state.cloud.recommend({team_count:payload.team_count});
+      return state.cloud.recommend({team_count:payload.team_count},options.onProgress);
     }
     if(path==="/api/chat"&&options.method==="POST"){
       if(!state.user)throw new Error("AI 가이드를 이용하려면 먼저 로그인해 주세요.");
@@ -408,7 +408,28 @@ function openCharacter(id){
   state.live2dRunId++;
   clearSpine();
   const detailImage=c.detail_image || c.image;
-  $("#dialogImage").src=detailImage; $("#dialogImage").alt=c.name_ko;
+  const illustration=$("#dialogImage"), illustrationLoading=$("#illustrationLoading");
+  const finishIllustration=()=>{
+    if(state.activeId!==id)return;
+    illustrationLoading.hidden=true;
+    illustration.classList.remove("is-loading");
+  };
+  illustrationLoading.hidden=false;
+  illustrationLoading.querySelector("b").textContent="일러스트를 불러오고 있어요…";
+  illustration.classList.add("is-loading");
+  illustration.onload=finishIllustration;
+  illustration.onerror=()=>{
+    if(state.activeId!==id)return;
+    if(illustration.src!==new URL(c.image,location.href).href){
+      illustrationLoading.querySelector("b").textContent="대체 일러스트를 불러오고 있어요…";
+      illustration.src=c.image;
+      return;
+    }
+    illustrationLoading.querySelector("b").textContent="일러스트를 불러오지 못했어요";
+    illustration.classList.remove("is-loading");
+  };
+  illustration.src=detailImage; illustration.alt=c.name_ko;
+  if(illustration.complete&&illustration.naturalWidth)requestAnimationFrame(finishIllustration);
   $("#dialogLiveImage").src=detailImage; $("#dialogLiveImage").alt=`${c.name_ko} Live2D 미리보기`;
   $("#dialogLiveImage").hidden=false;
   $("#live2dStatus").textContent="";
@@ -437,7 +458,15 @@ async function toggleLive2d(force){
   $("#dialogLiveToggle").textContent=enabled?"일러스트 보기":"Live2D 보기";
   if(!enabled){state.live2dRunId++;clearSpine();$("#dialogLiveImage").hidden=false;$("#live2dStatus").textContent="";return;}
   const character=state.characters.find(x=>x.id===state.activeId);
-  try{await renderSpine(character);}
+  try{
+    if(IS_CLOUD&&character){
+      $("#live2dStatus").textContent="Live2D 파일을 준비하고 있어요… 0%";
+      await state.cloud.preloadLive2d([character.id],false,progress=>{
+        if(character.id===state.activeId)$("#live2dStatus").textContent=`Live2D 파일을 준비하고 있어요… ${progress.percent}%`;
+      });
+    }
+    await renderSpine(character);
+  }
   catch(error){
     if(character?.id!==state.activeId)return;
     if(String(error?.message||error)!=="stale-live2d-render"){
@@ -464,14 +493,20 @@ async function saveActive(event){
 
 async function recommend(){
   const button=$("#recommendButton"); button.disabled=true; button.textContent="구성 계산 중…";
+  button.setAttribute("aria-busy","true");
+  let seconds=0;
+  $("#recommendMessage").textContent="보유 캐릭터와 사용 횟수를 확인하고 있어요…";
+  $("#teamResults").innerHTML=`<div class="planner-loading" role="status" aria-live="polite"><span class="loading-spinner"></span><strong>최적 파티를 계산하고 있어요</strong><p>가능한 조합과 캐릭터 중복을 비교 중이에요. 캐릭터가 많으면 조금 더 걸릴 수 있어요.</p><small>경과 0초</small><i></i></div>`;
+  const timer=setInterval(()=>{seconds++;const elapsed=$("#teamResults .planner-loading small");if(elapsed)elapsed.textContent=`경과 ${seconds}초`;},1000);
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   try{
-    const result=await api("/api/recommend",{method:"POST",body:JSON.stringify({team_count:$("#teamCount").value,roster:state.roster})});
+    const result=await api("/api/recommend",{method:"POST",body:JSON.stringify({team_count:$("#teamCount").value,roster:state.roster}),onProgress:message=>{$("#recommendMessage").textContent=message;}});
     $("#recommendMessage").textContent=result.ai_summary||result.message;
-    const teamCard=t=>`<article class="team-card"><div class="team-head"><h3>TEAM ${String(t.id).padStart(2,"0")} <small>${escapeHtml(t.confidence)} 신뢰도 · 육성 ${t.readiness}%</small></h3><span class="score">${t.score}</span></div><div class="team-members">${t.members.map(m=>`<div class="member"><img src="${imageUrl(m.image)}" alt="${escapeHtml(m.name_ko)}" referrerpolicy="no-referrer"><div><strong>${escapeHtml(m.name_ko)}</strong><small>${escapeHtml(m.slot||m.role)}</small></div></div>`).join("")}</div><div class="team-tags">${(t.tags||[]).map(tag=>`<span>${escapeHtml(tag)}</span>`).join("")}</div><p class="team-reason">${escapeHtml(t.reason)}</p>${t.score_details?`<p class="team-reason">조합 ${t.score_details.composition} · 최신성 ${t.score_details.meta} · 돌파/무기 ${t.score_details.investment} · 육성 ${t.score_details.build}</p>`:""}</article>`;
+    const teamCard=t=>`<article class="team-card"><div class="team-head"><h3>TEAM ${String(t.id).padStart(2,"0")} <small>${escapeHtml(t.confidence)} 신뢰도 · 육성 ${t.readiness}%${t.meta_tier?` · 메타 ${escapeHtml(t.meta_tier)}`:""}</small></h3><span class="score">${t.score}</span></div><div class="team-members">${t.members.map(m=>`<div class="member"><img src="${imageUrl(m.image)}" alt="${escapeHtml(m.name_ko)}" referrerpolicy="no-referrer"><div><strong>${escapeHtml(m.name_ko)}</strong><small>${escapeHtml(m.slot||m.role)}</small></div></div>`).join("")}</div><div class="team-tags">${(t.tags||[]).map(tag=>`<span>${escapeHtml(tag)}</span>`).join("")}</div><p class="team-reason">${escapeHtml(t.reason)}</p>${t.score_details?`<p class="team-reason">조합 ${t.score_details.composition} · 메타/티어 ${t.score_details.meta} · 돌파/무기 ${t.score_details.investment} · 육성 ${t.score_details.build}</p>`:""}</article>`;
     const configs=result.configurations||[];
     $("#teamResults").innerHTML=configs.length?`<div class="configuration-tabs" role="tablist" aria-label="추천 구성 선택">${configs.map((config,index)=>`<button type="button" role="tab" aria-selected="${index===0}" class="${index===0?"active":""}" data-config-index="${index}"><strong>${escapeHtml(config.label.replace("추천 구성 ",""))}</strong><span>${config.team_count}팀 · ${config.total_score}</span></button>`).join("")}</div>${configs.map((config,index)=>`<section class="configuration ${index===0?"active":""}" data-config-panel="${index}" ${index===0?"":"hidden"}><div class="configuration-head"><div><span>ALTERNATIVE ${String(index+1).padStart(2,"0")}</span><h2>${escapeHtml(config.label)}</h2></div><p>${config.team_count}개 파티 · 조합 지수 ${config.total_score} · 전투 점수 ${config.combat_score}</p></div><div class="configuration-teams">${config.teams.map(teamCard).join("")}</div></section>`).join("")}`:`<div class="empty">${escapeHtml(result.message)}</div>`;
   }catch(error){$("#recommendMessage").textContent=error.message;$("#teamResults").innerHTML=`<div class="empty">${escapeHtml(error.message)}</div>`;toast(error.message);}
-  finally{button.disabled=false;button.textContent="✦ 자동 파티 구성";}
+  finally{clearInterval(timer);button.disabled=false;button.removeAttribute("aria-busy");button.textContent="✦ 자동 파티 구성";}
 }
 
 function selectConfiguration(index){
@@ -534,9 +569,13 @@ async function init(){
   const [characters,roster,storage,aiStatus]=await Promise.all([api("/api/characters"),api("/api/roster"),api("/api/storage"),api("/api/ai/status")]); state.characters=characters.map(c=>({...c,image:imageUrl(c.image),detail_image:imageUrl(c.detail_image),element_icon:imageUrl(c.element_icon),weapon_icon:imageUrl(c.weapon_icon)})); state.roster=roster;setSaveState("saved",state.user||!IS_CLOUD?savedLabel(storage.last_saved):"로그인 후 계정에 저장할 수 있어요");renderAiStatus(aiStatus);
   renderFilters();renderGrid();
   if(IS_CLOUD){
+    if("serviceWorker" in navigator)navigator.serviceWorker.register("./service-worker.js?v=20261003-1").catch(console.debug);
     ensureNanokaSpineModule().catch(console.debug);
     const owned=Object.entries(state.roster).filter(([,value])=>value.owned).map(([id])=>id);
-    state.cloud.preloadLive2d(owned).catch(console.debug);
+    state.cloud.preloadLive2d(owned,false).then(()=>{
+      const warmAll=()=>state.cloud.preloadLive2d([],true).catch(console.debug);
+      if("requestIdleCallback" in window)requestIdleCallback(warmAll,{timeout:8000});else setTimeout(warmAll,3000);
+    }).catch(console.debug);
   }
   ["#searchInput","#ownedOnly"].forEach(s=>$(s).addEventListener("input",renderGrid));
   $("#filterPanel").addEventListener("click",e=>{

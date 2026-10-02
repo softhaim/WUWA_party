@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="로그인한 보유 캐릭터와 육성도를 바탕으로 파티를 설계하는 명조 로스터 플래너">
   <title>Resonance Lab — 명조 파티 플래너</title>
-  <link rel="stylesheet" href="./styles.css?v=cloud-20261001-firebase-ai4">
+  <link rel="stylesheet" href="./styles.css?v=cloud-20261003-roster-complete2">
 </head>
 <body>
   <header class="topbar">
@@ -67,7 +67,7 @@
   <dialog id="characterDialog">
     <form method="dialog" class="dialog-card">
       <button class="close" value="cancel" aria-label="닫기">×</button>
-      <div class="dialog-portrait" id="dialogPortrait"><div class="live2d-stage" id="live2dStage" aria-hidden="true"><img id="dialogLiveImage" alt=""><p id="live2dStatus"></p></div><img id="dialogImage" alt=""><button type="button" class="live2d-toggle" id="dialogLiveToggle" aria-pressed="false">일러스트 보기</button><div class="dialog-gradient"></div><div class="dialog-title"><span id="dialogElement"></span><h2 id="dialogName"></h2><p id="dialogMeta"></p></div></div>
+      <div class="dialog-portrait" id="dialogPortrait"><div class="live2d-stage" id="live2dStage" aria-hidden="true"><img id="dialogLiveImage" alt=""><p id="live2dStatus"></p></div><img id="dialogImage" alt=""><div class="illustration-loading" id="illustrationLoading" role="status" aria-live="polite" hidden><span class="loading-spinner"></span><b>일러스트를 불러오고 있어요…</b></div><button type="button" class="live2d-toggle" id="dialogLiveToggle" aria-pressed="false">일러스트 보기</button><div class="dialog-gradient"></div><div class="dialog-title"><span id="dialogElement"></span><h2 id="dialogName"></h2><p id="dialogMeta"></p></div></div>
       <div class="dialog-fields">
         <label class="own-switch"><input id="dialogOwned" type="checkbox"><span></span><b>이 캐릭터를 보유하고 있어요</b></label>
         <div class="field-row"><label>공명 체인<select id="dialogSequence"></select></label><label>레벨<div class="level-control"><input id="dialogLevel" type="number" min="1" max="90"><button type="button" id="maxLevel">MAX 90</button></div></label></div>
@@ -80,6 +80,6 @@
   </dialog>
   <div class="toast" id="toast" role="status"></div>
   <script src="./cloud-env.js"></script>
-  <script src="./app.js?v=cloud-20261001-firebase-ai7" defer></script>
+  <script src="./app.js?v=cloud-20261003-roster-complete2" defer></script>
 </body>
 </html>

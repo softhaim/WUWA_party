@@ -452,9 +452,9 @@ class ResonanceLabTests(unittest.TestCase):
         with patch.object(local_chatbot.chatbot, "answer") as answer:
             result = server.chat({"messages": [{"role": "user", "content": "치사를 2번 사용할 수 있을 때 내 파티풀에서는 어떻게 사용하는 게 좋아?"}], "roster": roster, "team_count": 3})
         answer.assert_not_called()
-        self.assertIn("치사 사용처는 2개 파티", result["answer"])
+        self.assertIn("치사 사용처는 1개 파티", result["answer"])
         self.assertIn("에이메스 / 데니아 / 치사", result["answer"])
-        self.assertIn("카르티시아 / 샤콘 / 치사", result["answer"])
+        self.assertIn("현재 조합 품질을 유지하면 1회만", result["answer"])
         self.assertNotIn("현재 보유풀 기준 고점 파티 12개", result["answer"])
         self.assertEqual(roster["chisa"]["max_uses"], original)
 
@@ -468,11 +468,10 @@ class ResonanceLabTests(unittest.TestCase):
                 ],
                 "roster": roster,
                 "team_count": 3,
-            })
+        })
         answer.assert_not_called()
-        self.assertIn("모니에 사용처는 2개 파티", result["answer"])
+        self.assertIn("모니에 사용처", result["answer"])
         self.assertIn("청초 / 린네 / 모니에", result["answer"])
-        self.assertIn("루시 / 레베카 / 모니에", result["answer"])
         self.assertNotIn("에이메스 / 카르티시아", result["answer"])
 
     def test_roster_safety_rejects_arrow_plus_recombined_party(self):
@@ -497,8 +496,8 @@ class ResonanceLabTests(unittest.TestCase):
 
     def test_catalog_is_valid_and_unique(self):
         characters = server.load_characters()
-        self.assertEqual(len(characters), 58)
-        self.assertEqual(len({c["id"] for c in characters}), 58)
+        self.assertEqual(len(characters), 60)
+        self.assertEqual(len({c["id"] for c in characters}), 60)
         self.assertTrue(all(c["image"].startswith("/api/image/") for c in characters))
         self.assertTrue(all(c["image_source"].startswith(("https://", "static/")) for c in characters))
         self.assertTrue(all(c["live2d_skeleton_url"].startswith("/api/live2d-assets/") for c in characters))
@@ -536,6 +535,86 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn("T_IconRole_Pile_Jingran_UI.webp", characters["jingran"]["nanoka_source"])
         self.assertEqual(server.character_image("qingxiao")[1], "image/webp")
         self.assertEqual(server.character_image("jingran", "detail_image_source")[1], "image/webp")
+
+    def test_hsin_and_suoming_use_2d_until_nanoka_live2d_is_published(self):
+        characters = {character["id"]: character for character in server.load_characters()}
+        self.assertEqual(characters["hsin"]["name_ko"], "여우의 별자리")
+        self.assertEqual(characters["suoming"]["name_ko"], "쇄명")
+        self.assertFalse(characters["hsin"]["live2d_available"])
+        self.assertFalse(characters["suoming"]["live2d_available"])
+        self.assertEqual(server.character_image("hsin")[1], "image/webp")
+        self.assertEqual(server.character_image("suoming", "detail_image_source")[1], "image/webp")
+
+    def test_hsin_electro_and_unison_modes_are_registered_separately(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in ("hsin", "rover-electro", "suisui")
+        }
+        team = server.recommend({"roster": roster, "team_count": 1})["teams"][0]
+        self.assertEqual({member["id"] for member in team["members"]}, set(roster))
+        self.assertEqual(team["meta_tier"], "T0.5")
+
+        early_roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in ("hsin", "suoming", "shorekeeper")
+        }
+        early = server.recommend({"roster": early_roster, "team_count": 1})["teams"][0]
+        self.assertEqual(early["confidence"], "초기 검증")
+        self.assertIn("합일", early["reason"])
+
+        budget_roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in ("hsin", "rover-electro", "buling")
+        }
+        budget = server.recommend({"roster": budget_roster, "team_count": 1})["teams"][0]
+        self.assertIn("전자", budget["reason"])
+
+    def test_hsin_unison_can_use_jinhsi_in_suoming_slot(self):
+        for support in ("shorekeeper", "mornye"):
+            roster = {
+                cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+                for cid in ("hsin", "jinhsi", support)
+            }
+            team = server.recommend({"roster": roster, "team_count": 1})["teams"][0]
+            self.assertEqual({member["id"] for member in team["members"]}, set(roster))
+            self.assertIn("합일", team["reason"])
+
+    def test_current_tier_zero_point_five_beats_s2_old_tier_three(self):
+        current = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1, "sequence": 0, "signature_weapon": True}
+            for cid in ("aemeath", "denia", "chisa")
+        }
+        older = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1, "sequence": 2, "signature_weapon": True}
+            for cid in ("camellya", "roccia", "shorekeeper")
+        }
+        current_team = server.recommend({"roster": current, "team_count": 1})["teams"][0]
+        older_team = server.recommend({"roster": older, "team_count": 1})["teams"][0]
+        self.assertGreater(current_team["score"], older_team["score"])
+        self.assertEqual(current_team["meta_tier"], "T0.5")
+
+    def test_global_allocation_keeps_two_complete_carries_over_one_premium_shell(self):
+        """A flexible older fallback may preserve two real parties globally."""
+        ids = (
+            "aemeath", "lynae", "mornye", "luuk-herssen", "sanhua", "brant",
+            "jingran", "iuno", "shorekeeper", "galbrena", "mortefi", "verina",
+            "yangyang-xuanling", "suisui", "chisa",
+        )
+        roster = {
+            cid: {
+                "owned": True, "level": 90, "build_status": "완성", "max_uses": 1,
+                "sequence": 3 if cid == "aemeath" else 0,
+                "signature_weapon": True, "weapon_rank": 1,
+            }
+            for cid in ids
+        }
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+
+        self.assertIn({"aemeath", "lynae", "mornye"}, teams)
+        self.assertIn({"galbrena", "iuno", "shorekeeper"}, teams)
+        self.assertIn({"jingran", "mortefi", "verina"}, teams)
+        self.assertEqual(len(teams), 4)
 
     def test_catalog_is_sorted_by_element_then_korean_name(self):
         characters = server.load_characters()
@@ -967,14 +1046,110 @@ class ResonanceLabTests(unittest.TestCase):
             for config in result["configurations"]
         ]
         self.assertIn({"aemeath", "denia", "chisa"}, allocations[0])
-        self.assertTrue(any({"aemeath", "lynae", "mornye"} in allocation for allocation in allocations))
+        self.assertTrue(any(
+            any("aemeath" in team and "chisa" not in team for team in allocation)
+            for allocation in allocations[1:]
+        ))
 
-    def test_all_uses_roster_capacity_instead_of_four_team_cap(self):
+    def test_all_keeps_only_complete_verified_teams_instead_of_filling_capacity(self):
         ids = ("hiyuki", "lucilla", "chisa", "aemeath", "denia", "mornye", "camellya", "sanhua", "shorekeeper", "jinhsi", "zhezhi", "verina", "jiyan", "mortefi", "baizhi")
         roster = {cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1} for cid in ids}
         result = server.recommend({"roster": roster, "team_count": "all"})
-        self.assertEqual(result["maximum_team_count"], 5)
-        self.assertGreaterEqual(len(result["teams"]), 5)
+        self.assertLess(result["maximum_team_count"], result["capacity_upper_bound"])
+        self.assertTrue(result["teams"])
+        self.assertTrue(all(team["verified_template"] for team in result["teams"]))
+        self.assertTrue(all("호환 조합" not in team["reason"] for team in result["teams"]))
+
+    def test_ciaccona_is_reserved_for_complete_cartethyia_shell(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in (
+                "cartethyia", "ciaccona", "rover-aero",
+                "sigrika", "sanhua", "yangyang",
+            )
+        }
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+        self.assertEqual(teams, [{"cartethyia", "ciaccona", "rover-aero"}])
+
+    def test_full_roster_maximizes_complete_teams_without_breaking_old_carries(self):
+        expected = {
+            frozenset(("hsin", "suoming", "shorekeeper")),
+            frozenset(("qingxiao", "denia", "mornye")),
+            frozenset(("cartethyia", "ciaccona", "rover-aero")),
+            frozenset(("jinhsi", "yinlin", "verina")),
+            frozenset(("camellya", "sanhua", "baizhi")),
+        }
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in set().union(*expected)
+        }
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        teams = {
+            frozenset(member["id"] for member in team["members"])
+            for team in result["teams"]
+        }
+        self.assertEqual(len(teams), 5)
+        self.assertEqual(teams, expected)
+        self.assertTrue(all(team["verified_template"] for team in result["teams"]))
+
+    def test_every_character_roster_exposes_diverse_complete_allocations(self):
+        roster = {
+            character["id"]: {
+                "owned": True,
+                "level": 90,
+                "build_status": "완성",
+                "max_uses": 1,
+                "signature_weapon": True,
+            }
+            for character in server.load_characters()
+        }
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        self.assertGreaterEqual(len(result["configurations"]), 7)
+        covered = set()
+        for configuration in result["configurations"]:
+            used = set()
+            for team in configuration["teams"]:
+                self.assertTrue(team["verified_template"])
+                for member in team["members"]:
+                    key = server.usage_key(member["id"])
+                    self.assertNotIn(key, used)
+                    used.add(key)
+                    covered.add(member["id"])
+        self.assertTrue({
+            "hsin", "zani", "phoebe", "qingxiao", "cartethyia", "ciaccona",
+            "camellya", "jinhsi", "aemeath", "augusta", "galbrena", "lucy",
+        } <= covered)
+
+    def test_partial_roster_matrix_returns_only_real_complete_shells(self):
+        scenarios = (
+            (("zani", "phoebe", "verina"), {"zani", "phoebe", "verina"}),
+            (("cartethyia", "ciaccona", "baizhi"), {"cartethyia", "ciaccona", "baizhi"}),
+            (("camellya", "sanhua", "baizhi"), {"camellya", "sanhua", "baizhi"}),
+            (("jinhsi", "yuanwu", "baizhi"), {"jinhsi", "yuanwu", "baizhi"}),
+            (("qingxiao", "denia", "mornye"), {"qingxiao", "denia", "mornye"}),
+        )
+        for ids, expected in scenarios:
+            roster = {
+                cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+                for cid in ids
+            }
+            result = server.recommend({"roster": roster, "team_count": "all"})
+            self.assertEqual(
+                {member["id"] for member in result["teams"][0]["members"]},
+                expected,
+            )
+            self.assertTrue(result["teams"][0]["verified_template"])
+
+    def test_qingxiao_never_steals_ciaccona_without_lynae_shell(self):
+        roster = {
+            cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
+            for cid in ("qingxiao", "ciaccona", "shorekeeper", "cartethyia", "baizhi")
+        }
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+        self.assertTrue(any({"cartethyia", "ciaccona"} <= team for team in teams))
+        self.assertFalse(any({"qingxiao", "ciaccona"} <= team for team in teams))
 
     def test_rover_forms_share_one_usage_slot_by_default(self):
         roster = {
@@ -1026,7 +1201,7 @@ class ResonanceLabTests(unittest.TestCase):
             if member["id"].startswith("rover-")
         )
         self.assertLessEqual(rover_uses, 2)
-        self.assertGreaterEqual(rover_uses, 2)
+        self.assertGreaterEqual(rover_uses, 1)
         for team in result["teams"]:
             self.assertLessEqual(
                 sum(1 for member in team["members"] if member["id"].startswith("rover-")),
@@ -1086,7 +1261,7 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn({"galbrena", "iuno", "verina"}, teams)
         self.assertNotIn({"galbrena", "mortefi", "verina"}, teams)
 
-    def test_latest_galbrena_gets_shorekeeper_over_older_camellya_fallback(self):
+    def test_latest_galbrena_and_older_camellya_both_survive_with_distinct_shells(self):
         roster = {
             cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1}
             for cid in (

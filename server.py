@@ -170,7 +170,8 @@ def preload_live2d_assets(
         characters = json.loads((DATA / "characters.json").read_text(encoding="utf-8"))
     targets = [
         character for character in characters
-        if character.get("live2d_skeleton_url") and character.get("live2d_atlas_url")
+        if character.get("live2d_available", True) is not False
+        and character.get("live2d_skeleton_url") and character.get("live2d_atlas_url")
     ]
     # Rover element forms share one visual model. Download each unique source
     # pair once so parallel workers never race over the same temporary file.
@@ -305,8 +306,12 @@ def save_roster(items: list[dict[str, Any]]) -> None:
 BUILD_POINTS = {"미육성": 0, "육성 중": 8, "실전 가능": 18, "완성": 25}
 BUILD_READINESS = {"미육성": 0.0, "육성 중": 0.45, "실전 가능": 0.78, "완성": 1.0}
 MIN_INFERRED_TEAM_SCORE = 60.0
-SCORE_WEIGHTS = {"composition": 44, "meta": 10, "investment": 33, "build": 13}
+MIN_COMPLETE_ALL_TEAM_SCORE = 80.0
+SCORE_WEIGHTS = {"composition": 43, "meta": 19, "investment": 20, "build": 18}
 SEQUENCE_QUALITY = {0: 0.78, 1: 0.83, 2: 0.87, 3: 0.91, 4: 0.94, 5: 0.97, 6: 1.0}
+TIER_META_VALUE = {"T0": 10.0, "T0.5": 9.0, "T1": 8.0, "T1.5": 7.0, "T2": 6.0, "T3": 4.5, "T4": 3.0}
+TIER_CARRY_PRIORITY = {"T0": 115.0, "T0.5": 100.0, "T1": 84.0, "T1.5": 70.0, "T2": 58.0, "T3": 38.0, "T4": 25.0}
+SEQUENCE_PRIORITY = {0: 0.0, 1: 6.0, 2: 15.0, 3: 28.0, 4: 38.0, 5: 49.0, 6: 60.0}
 
 
 def load_team_rules() -> dict[str, Any]:
@@ -324,6 +329,10 @@ def profile_for(character: dict[str, Any], rules: dict[str, Any]) -> dict[str, A
             profile["provides"] = [character["element_ko"]]
         if position == "support":
             profile["sustain"] = True
+    meta_tier = rules.get("carry_meta_tiers", {}).get(character["id"])
+    if meta_tier:
+        profile["meta_tier"] = meta_tier
+        profile["meta_value"] = TIER_META_VALUE.get(meta_tier, profile.get("meta_value", 5))
     return profile
 
 
@@ -362,6 +371,22 @@ def investment_quality(member: dict[str, Any]) -> float:
     if state.get("signature_weapon"):
         quality += 0.12 + max(0, int(state.get("weapon_rank", 1)) - 1) * 0.025
     return min(1.0, quality)
+
+
+def carry_priority(member: dict[str, Any], profile: dict[str, Any]) -> float:
+    """Rank a carry when multiple teams compete for the same premium parts.
+
+    Tier is the baseline, while sequences have enough value for a highly
+    invested T1 carry to overtake a low-investment T0 carry. Large tier gaps
+    remain meaningful, so an S2 T3 carry does not automatically beat S0R1 T0.5.
+    """
+    state = member["state"]
+    tier = profile.get("meta_tier")
+    baseline = TIER_CARRY_PRIORITY.get(tier, float(profile.get("meta_value", 5)) * 9)
+    sequence = max(0, min(6, int(state.get("sequence", 0))))
+    weapon = 4.0 if state.get("signature_weapon") else 0.0
+    weapon += max(0, int(state.get("weapon_rank", 1)) - 1) * 1.5
+    return baseline + SEQUENCE_PRIORITY[sequence] + weapon
 
 
 def weighted_member_average(
@@ -416,9 +441,10 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
     )
     if template:
         preview = template.get("status") == "preview"
-        reason = f"{'출시 전 프리뷰' if preview else '메타 조합'} · {template['label']}"
+        early = template.get("status") == "early"
+        reason = f"{'출시 전 프리뷰' if preview else '출시 초기 조합' if early else '메타 조합'} · {template['label']}"
         tags = template["tags"]
-        confidence = "프리뷰" if preview else "높음"
+        confidence = "프리뷰" if preview else "초기 검증" if early else "높음"
     else:
         best_carry = carries[0]
         carry_profile = profiles[best_carry["id"]]
@@ -504,7 +530,7 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         # A tiny recency tie-breaker keeps newly released BiS cores from losing
         # to an older core only because of a few tenths of scarcity math.
         # It is intentionally too small to overcome a real composition or build gap.
-        if template.get("patch") in {"3.5", "3.5-beta", "3.6", "3.6-beta"} and effective_tier == "bis":
+        if template.get("patch") in {"3.5", "3.5-beta", "3.6", "3.6-beta", "3.7", "3.7-beta"} and effective_tier == "bis":
             allocation_score += 1.0
     premium_support_value = max(
         (
@@ -525,6 +551,7 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
     # Allocation value is account-aware: recent high-value carries with actual
     # investment should receive contested premium supports before older or
     # low-investment cores. Combat score remains separate and visible in the UI.
+    primary_carry_priority = carry_priority(primary_carry, profiles[primary_carry["id"]])
     carry_investment = max(
         (
             profiles[member["id"]].get("meta_value", 5) * 0.8
@@ -533,7 +560,10 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         ) * readiness[member["id"]]
         for member in carries
     )
-    allocation_score += carry_investment
+    # Global roster allocation must preserve the current meta order even when
+    # two weaker teams could raise a purely linear sum. Sequence and signature
+    # are already included in this priority, after the carry's tier baseline.
+    allocation_score += carry_investment + primary_carry_priority * 0.25
     return {
         "key": ":".join(sorted(member_ids)),
         "members": members,
@@ -548,11 +578,13 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         "effective_tier": effective_tier,
         "primary_carry_id": primary_carry["id"],
         "carry_investment": round(carry_investment, 1),
+        "carry_priority": round(primary_carry_priority, 1),
         "opportunity_bonus": 0.0,
         "premium_core_mismatch": premium_core_mismatch,
         "verified_template": bool(template),
         "template_id": template.get("id") if template else None,
         "template_score": template.get("score") if template else None,
+        "meta_tier": (template.get("meta_tier") if template else None) or profiles[primary_carry["id"]].get("meta_tier"),
     }
 
 
@@ -610,6 +642,88 @@ def apply_opportunity_value(candidates: list[dict[str, Any]]) -> None:
         candidate["allocation_score"] = round(candidate["allocation_score"] + opportunity_bonus, 1)
 
 
+def apply_carry_resource_priority(candidates: list[dict[str, Any]]) -> None:
+    """Reserve contested amplifiers/supports for the strongest eligible carry.
+
+    Static team scores alone let a T1 fallback take Iuno from a T0 team or let
+    an uninvested carry take Lynae/Mornye from an S3 carry. Only verified,
+    high-quality templates establish a claim; inferred teams cannot monopolize
+    premium parts merely through broad compatibility tags.
+    """
+    by_carry: dict[str, list[dict[str, Any]]] = {}
+    for candidate in candidates:
+        by_carry.setdefault(candidate["primary_carry_id"], []).append(candidate)
+
+    # Keep one strongest claim per carry.  A resource usable N times reserves
+    # its N slots for the N strongest distinct carries; comparing everyone to
+    # only the single best claim incorrectly wasted Chisa/Mornye's extra uses.
+    claims: dict[str, dict[str, float]] = {}
+    candidate_claims: dict[tuple[str, str], float] = {}
+    for candidate in candidates:
+        if not candidate.get("verified_template") or float(candidate.get("template_score") or 0) < 90:
+            continue
+        priority = float(candidate.get("carry_priority", 0))
+        for member in candidate["members"]:
+            if member["id"] != candidate["primary_carry_id"]:
+                resource_key = member.get("usage_key", member["id"])
+                alternatives = [
+                    alternative for alternative in by_carry.get(candidate["primary_carry_id"], [])
+                    if resource_key not in {
+                        item.get("usage_key", item["id"]) for item in alternative["members"]
+                    }
+                ]
+                # No verified replacement means this member is part of the
+                # carry's defining shell (for example Cartethyia/Ciaccona).
+                # Treating the missing alternative as zero loss let flexible
+                # carries steal that irreplaceable partner.
+                loss = (
+                    max(0.0, candidate["score"] - max(alternative["score"] for alternative in alternatives))
+                    if alternatives else 6.0
+                )
+                interchangeable = candidate.get("effective_tier") == "bis" and any(
+                    alternative.get("effective_tier") == "bis"
+                    and candidate["score"] - alternative["score"] <= 1.5
+                    for alternative in alternatives
+                )
+                if interchangeable:
+                    loss = 0.0
+                # Tier and account investment establish the baseline while the
+                # marginal loss keeps irreplaceable, verified cores meaningful.
+                # The widened tier/sequence scale prevents a lower-tier carry
+                # from monopolizing Iuno or an S3 Aemeath's Lynae/Mornye.
+                claim = priority - (24.0 if interchangeable else 0.0) + loss * 4
+                candidate_claims[(candidate["key"], resource_key)] = claim
+                carry_claims = claims.setdefault(resource_key, {})
+                carry_claims[candidate["primary_carry_id"]] = max(
+                    carry_claims.get(candidate["primary_carry_id"], float("-inf")),
+                    claim,
+                )
+    for candidate in candidates:
+        penalty = 0.0
+        for member in candidate["members"]:
+            if member["id"] == candidate["primary_carry_id"]:
+                continue
+            resource_key = member.get("usage_key", member["id"])
+            own_claim = candidate_claims.get(
+                (candidate["key"], resource_key),
+                float(candidate.get("carry_priority", 0)),
+            )
+            ranked = sorted(claims.get(resource_key, {}).values(), reverse=True) or [own_claim]
+            usage_limit = max(1, int(member.get("_usage_limit", member["state"].get("max_uses", 1))))
+            cutoff = ranked[min(usage_limit, len(ranked)) - 1]
+            if own_claim < cutoff:
+                penalty += (cutoff - own_claim) * 0.9
+        # Priority is a tie-breaker, not a veto.  Unbounded penalties previously
+        # pushed sound legacy/fallback parties below unrelated low-score shells,
+        # so Jinhsi or Camellya disappeared even when both could coexist with the
+        # modern cores.  A modest cap still sends contested parts to the better
+        # claim while allowing the global allocator to preserve complete teams.
+        penalty = min(15.0, penalty)
+        candidate["resource_priority_penalty"] = round(penalty, 1)
+        candidate["resource_priority_bonus"] = 0.0
+        candidate["allocation_score"] = round(candidate["allocation_score"] - penalty, 1)
+
+
 def optimize_teams(candidates: list[dict[str, Any]], team_count: int, alternative_count: int = 3) -> list[list[dict[str, Any]]]:
     # Beam search evaluates allocations globally instead of greedily consuming the
     # best support in the first team. Usage limits are enforced across every team.
@@ -649,6 +763,143 @@ def optimize_teams(candidates: list[dict[str, Any]], team_count: int, alternativ
         if len(alternatives) >= alternative_count:
             break
     return alternatives
+
+
+def optimize_complete_allocations(
+    candidates: list[dict[str, Any]],
+    team_limit: int,
+    alternative_count: int = 3,
+) -> list[list[dict[str, Any]]]:
+    """Maximize the number of verified complete parties, then their total value.
+
+    Candidate filtering has already rejected unverified tag/element mixtures
+    and very low-value shells.  At this point an additional party is a real,
+    authored composition, so roster-wide mode must not discard it merely
+    because its scarcity-adjusted value is below an arbitrary reservation fee.
+    The deepest reachable beam therefore wins; score only breaks ties between
+    allocations containing the same number of complete parties.
+    """
+    states: list[tuple[list[dict[str, Any]], dict[str, int], float]] = [([], {}, 0.0)]
+    deepest = states
+    beam_width = 3000
+    for _ in range(team_limit):
+        expanded: list[tuple[list[dict[str, Any]], dict[str, int], float]] = []
+        for selected, counts, total in states:
+            selected_keys = {team["key"] for team in selected}
+            for candidate in candidates:
+                if candidate["key"] in selected_keys:
+                    continue
+                next_counts = dict(counts)
+                allowed = True
+                for member in candidate["members"]:
+                    key = member.get("usage_key", member["id"])
+                    next_counts[key] = next_counts.get(key, 0) + 1
+                    if next_counts[key] > int(member.get("_usage_limit", member["state"].get("max_uses", 1))):
+                        allowed = False
+                        break
+                if not allowed:
+                    continue
+                expanded.append((selected + [candidate], next_counts, total + candidate["allocation_score"]))
+        if not expanded:
+            break
+        expanded.sort(key=lambda item: item[2], reverse=True)
+        states = expanded[:beam_width]
+        deepest = states
+
+    deepest.sort(key=lambda item: item[2], reverse=True)
+    unique_states: list[tuple[list[dict[str, Any]], float]] = []
+    seen: set[tuple[str, ...]] = set()
+    for selected, _, total in deepest:
+        key = tuple(sorted(team["key"] for team in selected))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_states.append((selected, total))
+    if not unique_states:
+        return []
+
+    primary_carries = {team["primary_carry_id"] for team in unique_states[0][0]}
+
+    def greedy_forced_variant(seed: dict[str, Any]) -> list[dict[str, Any]]:
+        selected = [seed]
+        counts: dict[str, int] = {}
+        for member in seed["members"]:
+            key = member.get("usage_key", member["id"])
+            counts[key] = counts.get(key, 0) + 1
+        while len(selected) < team_limit:
+            selected_keys = {team["key"] for team in selected}
+            feasible = [
+                candidate for candidate in candidates
+                if candidate["key"] not in selected_keys and all(
+                    counts.get(member.get("usage_key", member["id"]), 0) + 1
+                    <= int(member.get("_usage_limit", member["state"].get("max_uses", 1)))
+                    for member in candidate["members"]
+                )
+            ]
+            if not feasible:
+                break
+            ranked: list[tuple[int, float, dict[str, Any]]] = []
+            for candidate in feasible:
+                next_counts = dict(counts)
+                for member in candidate["members"]:
+                    key = member.get("usage_key", member["id"])
+                    next_counts[key] = next_counts.get(key, 0) + 1
+                future_carries = {
+                    future["primary_carry_id"]
+                    for future in feasible
+                    if future["key"] != candidate["key"] and all(
+                        next_counts.get(member.get("usage_key", member["id"]), 0) + 1
+                        <= int(member.get("_usage_limit", member["state"].get("max_uses", 1)))
+                        for member in future["members"]
+                    )
+                }
+                ranked.append((len(future_carries), candidate["allocation_score"], candidate))
+            chosen = max(ranked, key=lambda item: (item[0], item[1]))[2]
+            selected.append(chosen)
+            for member in chosen["members"]:
+                key = member.get("usage_key", member["id"])
+                counts[key] = counts.get(key, 0) + 1
+        return selected
+
+    # Beam search intentionally focuses on the best A allocation. Add one
+    # count-preserving forced variant per omitted carry so B/C can expose other
+    # valid cores (for example Zani/Phoebe) instead of near-duplicates of A.
+    best_by_omitted_carry: dict[str, dict[str, Any]] = {}
+    for candidate in candidates:
+        carry_id = candidate["primary_carry_id"]
+        if carry_id in primary_carries:
+            continue
+        current = best_by_omitted_carry.get(carry_id)
+        if current is None or candidate["allocation_score"] > current["allocation_score"]:
+            best_by_omitted_carry[carry_id] = candidate
+    for seed in best_by_omitted_carry.values():
+        variant = greedy_forced_variant(seed)
+        if len(variant) != len(unique_states[0][0]):
+            continue
+        key = tuple(sorted(team["key"] for team in variant))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_states.append((variant, sum(team["allocation_score"] for team in variant)))
+
+    # A is the highest-value allocation. B/C deliberately cover different
+    # carries instead of repeating A with one support swapped, so users can see
+    # complete Zani, Cartethyia, Camellya, etc. distributions when all of them
+    # cannot coexist under one-use limits.
+    results = [unique_states.pop(0)[0]]
+    covered_carries = {team["primary_carry_id"] for team in results[0]}
+    while unique_states and len(results) < alternative_count:
+        index = max(
+            range(len(unique_states)),
+            key=lambda idx: (
+                len({team["primary_carry_id"] for team in unique_states[idx][0]} - covered_carries),
+                unique_states[idx][1],
+            ),
+        )
+        selected, _ = unique_states.pop(index)
+        results.append(selected)
+        covered_carries.update(team["primary_carry_id"] for team in selected)
+    return results
 
 
 def complete_roster_allocation(
@@ -710,6 +961,48 @@ def complete_roster_allocation(
     return selected
 
 
+def extend_allocation(
+    candidates: list[dict[str, Any]],
+    seed: list[dict[str, Any]],
+    team_count: int,
+) -> list[dict[str, Any]]:
+    """Fill a globally optimized high-value core with the best remaining teams.
+
+    Optimizing every possible roster-wide slot at once is needlessly expensive.
+    The first seven teams contain the contested meta carries and supports, so we
+    solve those slots globally and only then expand the roster without moving
+    their premium parts.
+    """
+    selected = list(seed)
+    selected_keys = {team["key"] for team in selected}
+    counts: dict[str, int] = {}
+    for team in selected:
+        for member in team["members"]:
+            key = member.get("usage_key", member["id"])
+            counts[key] = counts.get(key, 0) + 1
+
+    while len(selected) < team_count:
+        chosen = None
+        for candidate in candidates:
+            if candidate["key"] in selected_keys:
+                continue
+            if all(
+                counts.get(member.get("usage_key", member["id"]), 0) + 1
+                <= int(member.get("_usage_limit", member["state"].get("max_uses", 1)))
+                for member in candidate["members"]
+            ):
+                chosen = candidate
+                break
+        if chosen is None:
+            break
+        selected.append(chosen)
+        selected_keys.add(chosen["key"])
+        for member in chosen["members"]:
+            key = member.get("usage_key", member["id"])
+            counts[key] = counts.get(key, 0) + 1
+    return selected
+
+
 def candidate_shortlist(candidates: list[dict[str, Any]], available: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Keep meta leaders plus enough options for every owned character.
 
@@ -762,6 +1055,7 @@ def serialize_teams(selected: list[dict[str, Any]], rules: dict[str, Any]) -> li
             "score_details": candidate.get("score_details", {}),
             "verified_template": candidate.get("verified_template", False),
             "template_id": candidate.get("template_id"),
+            "meta_tier": candidate.get("meta_tier"),
         })
     return teams
 
@@ -772,6 +1066,7 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
     roster = payload.get("roster") or get_roster()
     requested_count = payload.get("team_count", 3)
     verified_only = bool(payload.get("verified_only"))
+    allow_inferred = bool(payload.get("allow_inferred", False))
     available: list[dict[str, Any]] = []
     for cid, state in roster.items():
         if (
@@ -810,44 +1105,78 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
             and float(candidate.get("template_score") or 0) >= 90
             and not candidate.get("premium_core_mismatch")
         ]
+    elif not allow_inferred:
+        # User-facing recommendations must be real three-character shells.
+        # Tag/element compatibility remains useful for authoring new templates,
+        # but it must never turn leftover units into a fake endgame party.
+        candidates = [
+            candidate for candidate in candidates
+            if candidate.get("verified_template")
+        ]
     if str(requested_count) == "all":
         candidates = [
             candidate
             for candidate in candidates
-            if candidate["score"] >= MIN_INFERRED_TEAM_SCORE
+            if candidate.get("verified_template")
+            and float(candidate.get("template_score") or 0) >= MIN_COMPLETE_ALL_TEAM_SCORE
             and not candidate.get("premium_core_mismatch")
         ]
-    apply_opportunity_value(candidates)
+    # Opportunity cost matters only when multiple teams compete for a unit.
+    # On a one-team request it can otherwise reward a weaker fallback merely
+    # because that fallback leaves more unused combinations behind.
+    if team_count > 1:
+        apply_opportunity_value(candidates)
+        apply_carry_resource_priority(candidates)
     candidates.sort(key=lambda item: item["allocation_score"], reverse=True)
     if str(requested_count) == "all":
-        allocations = []
-        for target_count in range(team_count, 0, -1):
-            # Build one complete baseline first, then perturb each team in that
-            # allocation. Excluding only the global top-N candidates repeatedly
-            # produced the same maximum-size result and collapsed the UI to one
-            # configuration. Baseline-team perturbations preserve capacity while
-            # discovering meaningfully different support/core assignments.
-            baseline = complete_roster_allocation(candidates, available, target_count)
-            excluded_keys = [None]
-            excluded_keys.extend(team["key"] for team in baseline)
-            excluded_keys.extend(candidate["key"] for candidate in candidates[:12])
-            excluded_keys = list(dict.fromkeys(excluded_keys))
-            completed = [complete_roster_allocation(candidates, available, target_count, key) for key in excluded_keys]
-            completed = [allocation for allocation in completed if len(allocation) == target_count]
-            if completed:
-                unique: dict[tuple[str, ...], list[dict[str, Any]]] = {}
-                for allocation in completed:
-                    key = tuple(sorted(team["key"] for team in allocation))
-                    unique[key] = allocation
-                allocations = sorted(
-                    unique.values(),
-                    key=lambda allocation: sum(team["allocation_score"] for team in allocation),
-                    reverse=True,
-                )[:3]
-                team_count = target_count
-                break
+        allocations = optimize_complete_allocations(candidates, team_count, alternative_count=8)
+        if allocations:
+            team_count = len(allocations[0])
     else:
-        allocations = optimize_teams(candidate_shortlist(candidates, available), team_count)
+        shortlist = candidate_shortlist(candidates, available)
+        allocations = optimize_teams(shortlist, team_count)
+        # Provide materially different distributions, not merely the same
+        # teams in another order.  Re-solve while excluding each primary team
+        # so users can compare a carry's alternative premium shell.
+        if allocations:
+            original_allocations = allocations
+            allocations = [original_allocations[0]]
+            seen = {tuple(sorted(team["key"] for team in allocations[0]))}
+            for primary_team in allocations[0]:
+                carry_alternatives = [
+                    candidate for candidate in shortlist
+                    if candidate["primary_carry_id"] == primary_team["primary_carry_id"]
+                    and candidate["key"] != primary_team["key"]
+                ]
+                if not carry_alternatives:
+                    continue
+                forced = carry_alternatives[0]
+                forced_counts: dict[str, int] = {}
+                for member in forced["members"]:
+                    resource = member.get("usage_key", member["id"])
+                    forced_counts[resource] = forced_counts.get(resource, 0) + 1
+                compatible = [
+                    candidate for candidate in shortlist
+                    if candidate["key"] != forced["key"] and all(
+                        forced_counts.get(member.get("usage_key", member["id"]), 0) + 1
+                        <= int(member.get("_usage_limit", member["state"].get("max_uses", 1)))
+                        for member in candidate["members"]
+                    )
+                ]
+                remainder = optimize_teams(compatible, team_count - 1, 1)[0] if team_count > 1 and compatible else []
+                variant = [forced, *remainder]
+                if len(variant) != team_count:
+                    continue
+                key = tuple(sorted(team["key"] for team in variant))
+                if key not in seen:
+                    allocations.append(variant)
+                    seen.add(key)
+            for allocation in original_allocations[1:]:
+                key = tuple(sorted(team["key"] for team in allocation))
+                if key not in seen:
+                    allocations.append(allocation)
+                    seen.add(key)
+            allocations = allocations[:3]
     configurations = []
     for index, allocation in enumerate(allocations, 1):
         teams = serialize_teams(allocation, rules)
@@ -869,7 +1198,7 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
         "configurations": configurations,
         "maximum_team_count": actual_count,
         "capacity_upper_bound": maximum_count,
-        "message": f"메타와 사용 횟수를 반영해 {count_note} 파티의 서로 다른 배분안 {len(configurations)}가지를 계산했습니다.",
+        "message": f"검증된 완성 조합과 사용 횟수를 반영해 {count_note} 파티의 서로 다른 배분안 {len(configurations)}가지를 계산했습니다.",
         "engine": "hybrid-meta-v2",
         "score_weights": SCORE_WEIGHTS,
         "rules_version": rules["version"],

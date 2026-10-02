@@ -13,8 +13,9 @@ OUTPUT_DIR = ROOT / "static" / "characters" / "nanoka"
 HEAD_DIR = OUTPUT_DIR / "head"
 PILE_DIR = OUTPUT_DIR / "pile"
 ICON_DIR = ROOT / "static" / "icons"
-NANOKA_CHARACTER_URL = "https://static.nanoka.cc/ww/3.6/character.json"
-NANOKA_CHARACTER_DETAIL_URL = "https://static.nanoka.cc/ww/3.6/en/character/{id}.json"
+NANOKA_DATA_VERSION = "3.7"
+NANOKA_CHARACTER_URL = f"https://static.nanoka.cc/ww/{NANOKA_DATA_VERSION}/character.json"
+NANOKA_CHARACTER_DETAIL_URL = f"https://static.nanoka.cc/ww/{NANOKA_DATA_VERSION}/en/character/{{id}}.json"
 NANOKA_ASSET_PREFIX = "https://static.nanoka.cc/assets/ww"
 
 ELEMENT_ICON_PATHS = {
@@ -109,6 +110,8 @@ CHARACTER_ALIASES = {
     "suisui": "Suisui",
     "qingxiao": "Qingxiao",
     "jingran": "Jingran",
+    "hsin": "Hsin",
+    "suoming": "Suoming",
 }
 
 
@@ -226,12 +229,18 @@ def main() -> None:
             downloaded += 1
         download_optional(background_url, pile_path)
 
-        try:
-            detail = fetch_json(NANOKA_CHARACTER_DETAIL_URL.format(id=nanoka_id))
-        except Exception as exc:  # noqa: BLE001
-            print(f"warning: failed to fetch detail for {character['id']} ({nanoka_id}): {exc}")
-            detail = {}
-        spine_skel, spine_atlas = find_spine_sources(detail)
+        spine_skel = character.get("live2d_skeleton_source", "")
+        spine_atlas = character.get("live2d_atlas_source", "")
+        # Existing sources remain stable, so only new catalog entries need the
+        # relatively slow detail request. Availability is checked separately by
+        # check_live2d_assets.py, which also turns future releases on later.
+        if not spine_skel or not spine_atlas:
+            try:
+                detail = fetch_json(NANOKA_CHARACTER_DETAIL_URL.format(id=nanoka_id))
+            except Exception as exc:  # noqa: BLE001
+                print(f"warning: failed to fetch detail for {character['id']} ({nanoka_id}): {exc}")
+                detail = {}
+            spine_skel, spine_atlas = find_spine_sources(detail)
 
         character["image"] = str(head_path.relative_to(ROOT))
         character["detail_image"] = str(pile_path.relative_to(ROOT))

@@ -4,7 +4,32 @@ import {collection, doc, getDocs, getFirestore, serverTimestamp, setDoc, writeBa
 import {getFunctions, httpsCallable} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-functions.js";
 import {initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app-check.js";
 import {getAI, getGenerativeModel, GoogleAIBackend} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-ai.js";
-import {recommendInBrowser} from "./cloud-planner.js";
+import {recommendInBrowser} from "./cloud-planner.js?v=20261003-roster-complete2";
+
+let plannerRequestId=0;
+
+function runPlanner(payload,onProgress){
+  if(typeof Worker==="undefined"){
+    return new Promise((resolve,reject)=>setTimeout(()=>{
+      try{resolve(recommendInBrowser(payload));}catch(error){reject(error);}
+    },0));
+  }
+  return new Promise((resolve,reject)=>{
+    const worker=new Worker("./planner-worker.js?v=20261003-roster-complete2",{type:"module"});
+    const id=++plannerRequestId;
+    const stop=()=>worker.terminate();
+    worker.onmessage=event=>{
+      const message=event.data||{};
+      if(message.id!==id)return;
+      if(message.type==="progress"){onProgress?.(message.message);return;}
+      stop();
+      if(message.type==="result")resolve(message.result);
+      else reject(new Error(message.message||"파티 구성을 계산하지 못했어요."));
+    };
+    worker.onerror=event=>{stop();reject(new Error(event.message||"파티 계산 작업을 시작하지 못했어요."));};
+    worker.postMessage({id,payload});
+  });
+}
 
 const authReady = auth => new Promise(resolve => {
   const unsubscribe=onAuthStateChanged(auth,user=>{unsubscribe();resolve(user);});
@@ -26,6 +51,16 @@ const cleanRosterItem = item => {
 };
 
 const compactText=(value,max=2000)=>String(value||"").replace(/\s+/g," ").trim().slice(0,max);
+
+function looksIncompleteAnswer(value){
+  const text=String(value||"").trim();
+  if(!text)return true;
+  const boldMarkers=(text.match(/\*\*/g)||[]).length;
+  if(boldMarkers%2)return true;
+  // Common shapes returned when Gemini reaches its output boundary midway
+  // through a heading/list item, even when an SDK does not expose MAX_TOKENS.
+  return /(?:[:：]|[-*•]|\d+\.)$/.test(text)||/[([{「『]$/.test(text);
+}
 
 function aiErrorText(error){
   const raw=[error?.code,error?.status,error?.message,error?.name].filter(Boolean).join(" ");
@@ -94,7 +129,7 @@ export async function createCloudRuntime(config){
   const db=getFirestore(app);
   const functions=getFunctions(app,config.functionsRegion||"asia-northeast3");
   const runtime={user:await authReady(auth),characters:null,rules:null};
-  const warmed=new Set();
+  const warmPromises=new Map();
   let manifestPromise=null;
   let aiModel=null;
   let aiFallbackModel=null;
@@ -108,12 +143,12 @@ export async function createCloudRuntime(config){
       const ai=getAI(app,{backend:new GoogleAIBackend()});
       aiModel=getGenerativeModel(ai,{
         model:config.aiModel||"gemini-3.8-flash",
-        generationConfig:{temperature:0.2,topP:0.85,maxOutputTokens:1400}
+        generationConfig:{temperature:0.2,topP:0.85,maxOutputTokens:2600}
       });
       if(config.aiFallbackModel!==false){
         aiFallbackModel=getGenerativeModel(ai,{
           model:config.aiFallbackModel||"gemini-3.1-flash-lite",
-          generationConfig:{temperature:0.2,topP:0.85,maxOutputTokens:1400}
+          generationConfig:{temperature:0.2,topP:0.85,maxOutputTokens:2600}
         });
       }
     }catch(error){
@@ -128,7 +163,20 @@ export async function createCloudRuntime(config){
   runtime.loadCharacters=async()=>{
     const response=await fetch("./data/characters.json",{cache:"no-cache"});
     if(!response.ok)throw new Error("캐릭터 데이터를 불러오지 못했습니다.");
-    runtime.characters=await response.json();
+    const order=new Map(["응결","용융","전도","기류","회절","인멸"].map((value,index)=>[value,index]));
+    runtime.characters=(await response.json()).sort((a,b)=>(order.get(a.element_ko)??99)-(order.get(b.element_ko)??99)||a.name_ko.localeCompare(b.name_ko,"ko"));
+    // Nanoka can publish a new Spine model after the character catalog. Probe
+    // only currently unavailable entries so a later upload becomes usable on
+    // the already deployed site; the next asset build will cache it locally.
+    Promise.all(runtime.characters.filter(item=>item.live2d_available===false&&item.live2d_skeleton_url&&item.live2d_atlas_url).map(async item=>{
+      try{
+        const [skeleton,atlas]=await Promise.all([
+          fetch(item.live2d_skeleton_url,{method:"HEAD",cache:"no-store"}),
+          fetch(item.live2d_atlas_url,{method:"HEAD",cache:"no-store"})
+        ]);
+        if(skeleton.ok&&atlas.ok){item.live2d_available=true;item.live2d_check="runtime-published";}
+      }catch(_){/* The 2D fallback remains authoritative until publication. */}
+    })).catch(()=>{});
     return runtime.characters;
   };
   runtime.loadRules=async()=>{
@@ -160,7 +208,7 @@ export async function createCloudRuntime(config){
     await batch.commit();
     return {ok:true,saved:items.length,saved_at:new Date().toISOString(),storage:"Cloud Firestore"};
   };
-  runtime.recommend=async payload=>{
+  runtime.recommend=async(payload,onProgress)=>{
     if(!runtime.user)throw new Error("로그인이 필요합니다.");
     const [characters,rules,roster]=await Promise.all([
       runtime.characters||runtime.loadCharacters(),
@@ -172,7 +220,7 @@ export async function createCloudRuntime(config){
       const response=await call(payload);
       return response.data;
     }
-    return recommendInBrowser({...payload,characters,rules,roster});
+    return runPlanner({...payload,characters,rules,roster},onProgress);
   };
   runtime.aiStatus=()=>{
     if(config.aiEnabled===false)return {ready:false,bundle_required:false,setup_title:"AI 가이드가 비활성화되어 있어요",message:"사이트 관리자가 Firebase AI Logic을 활성화해야 해요."};
@@ -194,7 +242,7 @@ export async function createCloudRuntime(config){
     const conversationText=history.filter(message=>message.role==="user").slice(-4).map(message=>message.content).join("\n");
     const scenario=rosterForQuestion(roster,characters,question,conversationText);
     const planningRoster=scenario.roster;
-    const recommendation=recommendInBrowser({characters,rules,roster:planningRoster,team_count:payload.team_count||3});
+    const recommendation=await runPlanner({characters,rules,roster:planningRoster,team_count:payload.team_count||3});
     const owned=characters.filter(character=>planningRoster[character.id]?.owned).map(character=>{
       const state=planningRoster[character.id];
       return {name:character.name_ko,role:character.role,element:character.element_ko,level:state.level,sequence:state.sequence,build:state.build_status,max_uses:state.max_uses,signature_weapon:state.signature_weapon,weapon_rank:state.weapon_rank};
@@ -223,7 +271,8 @@ export async function createCloudRuntime(config){
 - 관련 검증 템플릿의 score는 조합 자체의 기준점이고, 현재 로스터의 실제 점수는 검증된 추천 구성의 score예요. 두 점수를 혼동하지 마세요.
 - 정보가 부족하면 추측하지 말고 부족한 정보를 짧게 밝혀 주세요.
 - 중요한 결론은 **굵게**, 목록은 '- ' 또는 '1. ' 형식으로 읽기 쉽게 작성하세요.
-- 답변은 간결하게 작성하되, 선택 이유와 대체 배분의 손익을 설명하세요.
+- 답변은 보통 400~700자, 최대 8개 항목 안에서 간결하게 작성하고 선택 이유와 대체 배분의 손익을 설명하세요.
+- 중간 제목이나 목록을 시작했다면 반드시 내용을 채우고, 마지막 문장까지 완결해서 끝내세요.
 
 메타 데이터: ${JSON.stringify({patch:rules.meta_patch,updated_at:rules.meta_updated_at,rules_version:rules.version})}
 보유 캐릭터: ${JSON.stringify(owned)}
@@ -234,7 +283,7 @@ export async function createCloudRuntime(config){
 
 마지막 질문: ${question}`;
     try{
-      let result,usedModel=config.aiModel||"gemini-3.8-flash";
+      let result,usedModel=config.aiModel||"gemini-3.8-flash",usedGenerator=aiModel;
       try{
         result=await aiModel.generateContent(prompt);
       }catch(primaryError){
@@ -242,24 +291,49 @@ export async function createCloudRuntime(config){
         if(!retryable||!aiFallbackModel)throw primaryError;
         console.warn("Primary Gemini model unavailable; retrying with fallback",{model:usedModel,code:primaryError?.code,status:primaryError?.status});
         usedModel=config.aiFallbackModel||"gemini-3.1-flash-lite";
-        result=await aiFallbackModel.generateContent(prompt);
+        usedGenerator=aiFallbackModel;
+        result=await usedGenerator.generateContent(prompt);
       }
-      const answer=groundedAnswer(result.response.text(),recommendation,characters,planningRoster,question,templateKeys);
+      const finishReason=String(result.response.candidates?.[0]?.finishReason||"");
+      if(/MAX_TOKENS|LENGTH/i.test(finishReason)||looksIncompleteAnswer(result.response.text())){
+        const repairPrompt=`${prompt}\n\n직전 답변이 길이 제한으로 중간에 끊겼어요. 같은 근거만 사용해 핵심 결론, 이유, 대체안의 손익을 650자 이내의 완결된 한국어 답변으로 처음부터 다시 작성하세요.`;
+        result=await usedGenerator.generateContent(repairPrompt);
+      }
+      const generated=result.response.text();
+      const answer=looksIncompleteAnswer(generated)?plannerFallback(recommendation):groundedAnswer(generated,recommendation,characters,planningRoster,question,templateKeys);
       return {answer,sources:["내 보유풀","검증된 파티 플래너",`Gemini ${usedModel}`],grounded:true};
     }catch(error){
       console.error("Firebase AI Logic request failed",{code:error?.code,status:error?.status,message:error?.message,name:error?.name});
       throw new Error(aiErrorText(error));
     }
   };
-  runtime.preloadLive2d=async(characterIds=[],includeRemaining=true)=>{
+  const warmAsset=async url=>{
+    if(warmPromises.has(url))return warmPromises.get(url);
+    const promise=(async()=>{
+      const cache=typeof caches!=="undefined"?await caches.open("resonance-live2d-v2"):null;
+      if(cache&&await cache.match(url))return {url,cached:true};
+      const response=await fetch(url,{cache:"force-cache"});
+      if(!response.ok)throw new Error(`Live2D 파일 ${response.status}`);
+      if(cache)await cache.put(url,response.clone());
+      await response.arrayBuffer();
+      return {url,cached:false};
+    })().catch(error=>{warmPromises.delete(url);throw error;});
+    warmPromises.set(url,promise);
+    return promise;
+  };
+  runtime.preloadLive2d=async(characterIds=[],includeRemaining=false,onProgress)=>{
     manifestPromise ||= fetch("./data/live2d-manifest.json",{cache:"force-cache"}).then(response=>response.ok?response.json():{characters:{},all:[]});
     const manifest=await manifestPromise;
     const priority=[...new Set(characterIds.flatMap(id=>manifest.characters?.[id]||[]))];
     const remaining=includeRemaining?(manifest.all||[]):[];
-    const queue=[...priority,...remaining].filter(url=>url&&!warmed.has(url));
-    queue.forEach(url=>warmed.add(url));
-    const worker=async()=>{while(queue.length){const url=queue.shift();try{const response=await fetch(url,{cache:"force-cache"});if(response.ok)await response.arrayBuffer();}catch(error){warmed.delete(url);console.debug("Live2D preload skipped",url,error);}}};
-    await Promise.all(Array.from({length:Math.min(4,queue.length)},worker));
+    const queue=[...new Set([...priority,...remaining])].filter(Boolean);
+    const total=queue.length;
+    let completed=0;
+    const report=(url,cached,error)=>onProgress?.({completed,total,percent:total?Math.round(completed/total*100):100,url,cached,error});
+    report("",true);
+    const download=async()=>{while(queue.length){const url=queue.shift();try{const result=await warmAsset(url);completed++;report(url,result.cached);}catch(error){completed++;report(url,false,error.message);console.debug("Live2D preload skipped",url,error);}}};
+    await Promise.all(Array.from({length:Math.min(includeRemaining?2:3,queue.length)},download));
+    return {completed,total,percent:100};
   };
   return runtime;
 }

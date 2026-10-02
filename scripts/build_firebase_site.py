@@ -30,7 +30,7 @@ def build_characters() -> list[dict]:
             character[field] = public_path(character.get(field, ""))
         for field in ("live2d_skeleton_url", "live2d_atlas_url"):
             value = character.get(field, "")
-            if value.startswith(LIVE2D_PREFIX) and LIVE2D_SOURCE.exists():
+            if character.get("live2d_available", True) is not False and value.startswith(LIVE2D_PREFIX) and LIVE2D_SOURCE.exists():
                 character[field] = "/live2d-assets/" + value.removeprefix(LIVE2D_PREFIX)
     return characters
 
@@ -45,6 +45,8 @@ def live2d_manifest(characters: list[dict]) -> dict:
     mapping: dict[str, list[str]] = {}
     all_assets: list[str] = []
     for character in characters:
+        if character.get("live2d_available", True) is False:
+            continue
         skeleton = character.get("live2d_skeleton_url", "")
         atlas = character.get("live2d_atlas_url", "")
         if not skeleton.startswith("/live2d-assets/") or not atlas.startswith("/live2d-assets/"):
@@ -77,9 +79,9 @@ def main() -> None:
 
     for name in ("characters", "icons", "vendor"):
         shutil.copytree(STATIC / name, OUTPUT / name)
-    for name in ("app.js", "styles.css"):
+    for name in ("app.js", "styles.css", "service-worker.js"):
         shutil.copy2(STATIC / name, OUTPUT / name)
-    for name in ("index.html", "cloud-runtime.js", "cloud-planner.js"):
+    for name in ("index.html", "cloud-runtime.js", "cloud-planner.js", "planner-worker.js"):
         shutil.copy2(CLOUD / name, OUTPUT / name)
     shutil.copy2(cloud_environment, OUTPUT / "cloud-env.js")
 

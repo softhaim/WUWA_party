@@ -1,8 +1,38 @@
 {
-  "version": "2026.08.21",
-  "meta_patch": "3.6",
-  "meta_updated_at": "2026-08-21",
-  "preview_notice": "3.6 청초·경연 출시 메타와 3.5 수수·양양: 현령 코어를 함께 반영했습니다.",
+  "version": "2026.10.03-2",
+  "meta_patch": "3.7",
+  "meta_updated_at": "2026-10-03",
+  "preview_notice": "3.7 여우의 별자리·쇄명 초기 메타와 Prydwen 3.7 파티 티어를 반영했습니다.",
+  "tier_source": "https://www.prydwen.gg/wuthering-waves/team-tier-list",
+  "tier_source_updated_at": "2026-09-30",
+  "carry_meta_tiers": {
+    "hiyuki": "T0",
+    "jingran": "T0",
+    "qingxiao": "T0",
+    "yangyang-xuanling": "T0",
+    "aemeath": "T0.5",
+    "hsin": "T0.5",
+    "luuk-herssen": "T0.5",
+    "sigrika": "T0.5",
+    "augusta": "T1",
+    "cartethyia": "T1",
+    "galbrena": "T1",
+    "iuno": "T1",
+    "lucy": "T1",
+    "phrolova": "T1",
+    "carlotta": "T1.5",
+    "jiyan": "T2",
+    "phoebe": "T2",
+    "zani": "T2",
+    "camellya": "T3",
+    "encore": "T3",
+    "jinhsi": "T3",
+    "lingyang": "T3",
+    "xiangli-yao": "T3",
+    "calcharo": "T4",
+    "chixia": "T4",
+    "rover-havoc": "T4"
+  },
   "preview_high_end_cores": [
     [
       "yangyang-xuanling",
@@ -16,6 +46,16 @@
     ]
   ],
   "high_end_cores": [
+    [
+      "hsin",
+      "suoming",
+      "shorekeeper"
+    ],
+    [
+      "hsin",
+      "rover-electro",
+      "suisui"
+    ],
     [
       "hiyuki",
       "lucilla",
@@ -88,6 +128,158 @@
     ]
   ],
   "templates": [
+    {
+      "id": "hsin_electro_rover_suisui_bis",
+      "members": [
+        "hsin",
+        "rover-electro",
+        "suisui"
+      ],
+      "positions": {
+        "hsin": "carry",
+        "rover-electro": "amplifier",
+        "suisui": "support"
+      },
+      "score": 97,
+      "tier": "bis",
+      "meta_tier": "T0.5",
+      "status": "current",
+      "patch": "3.7",
+      "label": "여우의 별자리 전자 이상 고점",
+      "tags": [
+        "전도",
+        "전자 효과",
+        "공명 스킬"
+      ],
+      "source": "https://www.prydwen.gg/wuthering-waves/characters/hsin"
+    },
+    {
+      "id": "hsin_suoming_shorekeeper_unison",
+      "members": [
+        "hsin",
+        "suoming",
+        "shorekeeper"
+      ],
+      "positions": {
+        "hsin": "carry",
+        "suoming": "amplifier",
+        "shorekeeper": "support"
+      },
+      "score": 99,
+      "tier": "bis",
+      "meta_tier": "T0",
+      "status": "early",
+      "patch": "3.7",
+      "label": "여우의 별자리·쇄명 합일 메인 딜러 최고점",
+      "tags": [
+        "전도",
+        "합일",
+        "공명 스킬",
+        "치명타"
+      ],
+      "source": "https://allthings.how/best-teams-for-hsin-in-wuthering-waves-electro-flare-and-unison/"
+    },
+    {
+      "id": "hsin_suoming_mornye_unison",
+      "members": [
+        "hsin",
+        "suoming",
+        "mornye"
+      ],
+      "positions": {
+        "hsin": "carry",
+        "suoming": "amplifier",
+        "mornye": "support"
+      },
+      "score": 96,
+      "tier": "high",
+      "meta_tier": "provisional",
+      "status": "early",
+      "patch": "3.7",
+      "label": "여우의 별자리·쇄명·모니에 합일 고점",
+      "tags": [
+        "전도",
+        "합일",
+        "조화도 변형",
+        "회복"
+      ],
+      "source": "https://buffhub.com/blog/wuthering-waves/wuthering-waves-hsin-build-guide.html"
+    },
+    {
+      "id": "hsin_electro_rover_buling_budget",
+      "members": [
+        "hsin",
+        "rover-electro",
+        "buling"
+      ],
+      "positions": {
+        "hsin": "carry",
+        "rover-electro": "amplifier",
+        "buling": "support"
+      },
+      "score": 91,
+      "tier": "alternative",
+      "meta_tier": "T0.5",
+      "status": "current",
+      "patch": "3.7",
+      "label": "여우의 별자리 무과금 전자 이상 조합",
+      "tags": [
+        "전도",
+        "전자 효과",
+        "접근성"
+      ],
+      "source": "https://www.prydwen.gg/wuthering-waves/characters/hsin"
+    },
+    {
+      "id": "hsin_jinhsi_shorekeeper_unison",
+      "members": [
+        "hsin",
+        "jinhsi",
+        "shorekeeper"
+      ],
+      "positions": {
+        "hsin": "carry",
+        "jinhsi": "amplifier",
+        "shorekeeper": "support"
+      },
+      "score": 89,
+      "tier": "alternative",
+      "meta_tier": "T1.5",
+      "status": "current",
+      "patch": "3.7",
+      "label": "여우의 별자리 합일 대체 조합",
+      "tags": [
+        "합일",
+        "협동 공격",
+        "치명타"
+      ],
+      "source": "https://www.prydwen.gg/wuthering-waves/characters/hsin"
+    },
+    {
+      "id": "hsin_jinhsi_mornye_unison",
+      "members": [
+        "hsin",
+        "jinhsi",
+        "mornye"
+      ],
+      "positions": {
+        "hsin": "carry",
+        "jinhsi": "amplifier",
+        "mornye": "support"
+      },
+      "score": 87,
+      "tier": "expansion",
+      "meta_tier": "T1.5",
+      "status": "current",
+      "patch": "3.7",
+      "label": "쇄명 부재 시 금희·모니에 합일 대체 조합",
+      "tags": [
+        "합일",
+        "협동 공격",
+        "조화도 변형"
+      ],
+      "source": "https://www.prydwen.gg/wuthering-waves/characters/hsin"
+    },
     {
       "id": "xuanling_suisui_chisa_preview",
       "members": [
@@ -358,7 +550,74 @@
       "label": "카르티시아·샤콘·기류 방랑자 고점 대체",
       "tags": [
         "기류 침식"
-      ]
+      ],
+      "source": "https://www.prydwen.gg/wuthering-waves/characters/rover-aero"
+    },
+    {
+      "id": "cartethyia_ciaccona_shorekeeper",
+      "members": [
+        "cartethyia",
+        "ciaccona",
+        "shorekeeper"
+      ],
+      "positions": {
+        "cartethyia": "carry",
+        "ciaccona": "amplifier",
+        "shorekeeper": "support"
+      },
+      "score": 94,
+      "tier": "alternative",
+      "label": "치사·기류 방랑자 부재 시 카르티시아·샤콘·파수인",
+      "tags": [
+        "기류 침식",
+        "치명타",
+        "피해 증가"
+      ],
+      "source": "https://www.prydwen.gg/wuthering-waves/characters/ciaccona"
+    },
+    {
+      "id": "cartethyia_ciaccona_verina",
+      "members": [
+        "cartethyia",
+        "ciaccona",
+        "verina"
+      ],
+      "positions": {
+        "cartethyia": "carry",
+        "ciaccona": "amplifier",
+        "verina": "support"
+      },
+      "score": 92,
+      "tier": "alternative",
+      "label": "카르티시아·샤콘·벨리나 안정형 대체",
+      "tags": [
+        "기류 침식",
+        "피해 증가",
+        "회복"
+      ],
+      "source": "https://www.prydwen.gg/wuthering-waves/characters/ciaccona"
+    },
+    {
+      "id": "cartethyia_ciaccona_baizhi",
+      "members": [
+        "cartethyia",
+        "ciaccona",
+        "baizhi"
+      ],
+      "positions": {
+        "cartethyia": "carry",
+        "ciaccona": "amplifier",
+        "baizhi": "support"
+      },
+      "score": 87,
+      "tier": "expansion",
+      "label": "상위 서포터 부재 시 카르티시아·샤콘·설지 대체",
+      "tags": [
+        "기류 침식",
+        "피해 증가",
+        "회복"
+      ],
+      "source": "https://www.prydwen.gg/wuthering-waves/characters/ciaccona"
     },
     {
       "id": "phrolova_bis",
@@ -493,7 +752,52 @@
       "label": "젠니 회절 침식 조합",
       "tags": [
         "회절 침식"
-      ]
+      ],
+      "source": "https://www.prydwen.gg/wuthering-waves/characters/zani"
+    },
+    {
+      "id": "zani_phoebe_verina",
+      "members": [
+        "zani",
+        "phoebe",
+        "verina"
+      ],
+      "positions": {
+        "zani": "carry",
+        "phoebe": "amplifier",
+        "verina": "support"
+      },
+      "score": 90,
+      "tier": "alternative",
+      "label": "파수인 부재 시 젠니·페비·벨리나 대체",
+      "tags": [
+        "회절 침식",
+        "피해 증가",
+        "회복"
+      ],
+      "source": "https://www.prydwen.gg/wuthering-waves/characters/zani"
+    },
+    {
+      "id": "zani_phoebe_baizhi",
+      "members": [
+        "zani",
+        "phoebe",
+        "baizhi"
+      ],
+      "positions": {
+        "zani": "carry",
+        "phoebe": "amplifier",
+        "baizhi": "support"
+      },
+      "score": 86,
+      "tier": "expansion",
+      "label": "상위 서포터 부재 시 젠니·페비·설지 대체",
+      "tags": [
+        "회절 침식",
+        "피해 증가",
+        "회복"
+      ],
+      "source": "https://game8.co/games/Wuthering-Waves/archives/486248"
     },
     {
       "id": "augusta_bis",
@@ -1148,29 +1452,6 @@
       ]
     },
     {
-      "id": "qingxiao_ciaccona_shorekeeper",
-      "members": [
-        "qingxiao",
-        "ciaccona",
-        "shorekeeper"
-      ],
-      "positions": {
-        "qingxiao": "carry",
-        "ciaccona": "amplifier",
-        "shorekeeper": "support"
-      },
-      "score": 90,
-      "tier": "alternative",
-      "status": "current",
-      "patch": "3.6",
-      "label": "청초 기류 하이퍼캐리 대체",
-      "tags": [
-        "기류",
-        "기류 침식",
-        "치명타"
-      ]
-    },
-    {
       "id": "jingran_iuno_shorekeeper",
       "members": [
         "jingran",
@@ -1268,6 +1549,33 @@
     }
   ],
   "profiles": {
+    "hsin": {
+      "position": "carry",
+      "meta_value": 9,
+      "damage": [
+        "전도",
+        "전자 효과",
+        "공명 스킬",
+        "합일"
+      ],
+      "archetypes": [
+        "전자 효과",
+        "합일"
+      ]
+    },
+    "suoming": {
+      "position": "amplifier",
+      "provides": [
+        "전도",
+        "공명 스킬",
+        "합일"
+      ],
+      "archetypes": [
+        "전자 효과",
+        "합일"
+      ],
+      "support_value": 8
+    },
     "yangyang-xuanling": {
       "position": "carry",
       "meta_value": 10,
