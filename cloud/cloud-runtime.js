@@ -4,7 +4,7 @@ import {collection, doc, getDocs, getFirestore, serverTimestamp, setDoc, writeBa
 import {getFunctions, httpsCallable} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-functions.js";
 import {initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app-check.js";
 import {getAI, getGenerativeModel, GoogleAIBackend, ThinkingLevel} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-ai.js";
-import {recommendInBrowser} from "./cloud-planner.js?v=20261007-support-allocation";
+import {recommendInBrowser} from "./cloud-planner.js?v=20261007-premium-support";
 
 let plannerRequestId=0;
 
@@ -15,7 +15,7 @@ function runPlanner(payload,onProgress){
     },0));
   }
   return new Promise((resolve,reject)=>{
-    const worker=new Worker("./planner-worker.js?v=20261007-support-allocation",{type:"module"});
+    const worker=new Worker("./planner-worker.js?v=20261007-premium-support",{type:"module"});
     const id=++plannerRequestId;
     const stop=()=>worker.terminate();
     worker.onmessage=event=>{

@@ -1401,6 +1401,30 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn({"jinhsi", "yinlin", "verina"}, teams)
         self.assertIn({"camellya", "sanhua", "baizhi"}, teams)
 
+    def test_two_shorekeeper_uses_do_not_displace_current_carries_for_t3_team(self):
+        roster = {
+            cid: {
+                "owned": True,
+                "level": 90,
+                "build_status": "완성",
+                "max_uses": 1,
+                "signature_weapon": True,
+            }
+            for cid in (
+                "galbrena", "iuno", "carlotta", "zhezhi", "jinhsi", "yinlin",
+                "camellya", "sanhua", "shorekeeper", "verina", "baizhi",
+            )
+        }
+        roster["shorekeeper"]["max_uses"] = 2
+        roster["verina"]["max_uses"] = 2
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+        self.assertIn({"galbrena", "iuno", "shorekeeper"}, teams)
+        self.assertIn({"carlotta", "zhezhi", "shorekeeper"}, teams)
+        self.assertIn({"jinhsi", "yinlin", "verina"}, teams)
+        self.assertIn({"camellya", "sanhua", "baizhi"}, teams)
+        self.assertNotIn({"camellya", "sanhua", "shorekeeper"}, teams)
+
     def test_two_mornye_uses_finish_current_cores_before_generic_reservation(self):
         roster = {
             cid: {

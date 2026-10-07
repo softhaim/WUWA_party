@@ -1,4 +1,4 @@
-import {recommendInBrowser} from "./cloud-planner.js?v=20261007-support-allocation";
+import {recommendInBrowser} from "./cloud-planner.js?v=20261007-premium-support";
 
 self.onmessage=event=>{
   const {id,payload}=event.data||{};

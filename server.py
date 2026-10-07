@@ -307,11 +307,14 @@ BUILD_POINTS = {"미육성": 0, "육성 중": 8, "실전 가능": 18, "완성": 
 BUILD_READINESS = {"미육성": 0.0, "육성 중": 0.45, "실전 가능": 0.78, "완성": 1.0}
 MIN_INFERRED_TEAM_SCORE = 60.0
 MIN_COMPLETE_ALL_TEAM_SCORE = 80.0
+MIN_COMPLETE_ALL_COMBAT_SCORE = 79.0
+MIN_COMPLETE_ALL_CORE_READINESS = 0.45
 SCORE_WEIGHTS = {"composition": 43, "meta": 19, "investment": 20, "build": 18}
 SEQUENCE_QUALITY = {0: 0.78, 1: 0.83, 2: 0.87, 3: 0.91, 4: 0.94, 5: 0.97, 6: 1.0}
 TIER_META_VALUE = {"T0": 10.0, "T0.5": 9.0, "T1": 8.0, "T1.5": 7.0, "T2": 6.0, "T3": 4.5, "T4": 3.0}
 TIER_CARRY_PRIORITY = {"T0": 115.0, "T0.5": 100.0, "T1": 84.0, "T1.5": 70.0, "T2": 58.0, "T3": 38.0, "T4": 25.0}
 SEQUENCE_PRIORITY = {0: 0.0, 1: 6.0, 2: 15.0, 3: 28.0, 4: 38.0, 5: 49.0, 6: 60.0}
+CURRENT_META_SUPPORT_PRIORITY = 70.0
 
 
 def load_team_rules() -> dict[str, Any]:
@@ -498,13 +501,16 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
     )
     generic_support_tags = {"범용", "피해 증가", "회복", "보호", "치명타"}
     support_fit = {}
+    support_values = {}
     for member in members:
         if resolved_positions[member["id"]] != "support":
             continue
         profile = profiles[member["id"]]
         supplied = set(profile.get("provides", [])) | set(profile.get("archetypes", []))
         matches = (carry_needs & supplied) - generic_support_tags
-        support_fit[member.get("usage_key", member["id"])] = len(matches)
+        resource_key = member.get("usage_key", member["id"])
+        support_fit[resource_key] = len(matches)
+        support_values[resource_key] = float(profile.get("support_value", 0))
     composition_quality = (template["score"] if template else min(88.0, score)) / 100
     meta_quality = min(1.0, profiles[primary_carry["id"]].get("meta_value", 5) / 10)
     investment_average = weighted_member_average(members, resolved_positions, investments)
@@ -590,6 +596,7 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         "tags": tags,
         "confidence": confidence,
         "readiness": round(sum(readiness.values()) / len(readiness) * 100),
+        "weakest_core_readiness": round(weakest_core_readiness, 3),
         "score_details": score_details,
         "member_positions": member_positions,
         "effective_tier": effective_tier,
@@ -597,6 +604,7 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         "carry_investment": round(carry_investment, 1),
         "carry_priority": round(primary_carry_priority, 1),
         "support_fit": support_fit,
+        "support_values": support_values,
         "opportunity_bonus": 0.0,
         "premium_core_mismatch": premium_core_mismatch,
         "verified_template": bool(template),
@@ -630,13 +638,24 @@ def apply_opportunity_value(candidates: list[dict[str, Any]]) -> None:
             # supports and must not inflate every variant of the same core.
             if member_id == carry_id or position != "support":
                 continue
+            candidate_core = {
+                item.get("usage_key", item["id"])
+                for item in candidate["members"]
+                if candidate.get("member_positions", {}).get(item["id"], item.get("_position")) != "support"
+            }
             alternatives = [
                 alternative
                 for alternative in by_carry.get(carry_id, [])
                 if member_id not in {item["id"] for item in alternative["members"]}
+                and {
+                    item.get("usage_key", item["id"])
+                    for item in alternative["members"]
+                    if alternative.get("member_positions", {}).get(item["id"], item.get("_position")) != "support"
+                } == candidate_core
             ]
             resource_key = member.get("usage_key", member["id"])
             mechanic_fit = float(candidate.get("support_fit", {}).get(resource_key, 0))
+            support_value = float(candidate.get("support_values", {}).get(resource_key, 0))
             replacement_value = 0.0
             if alternatives:
                 best_alternative = max(alternatives, key=lambda item: item["score"])
@@ -652,6 +671,30 @@ def apply_opportunity_value(candidates: list[dict[str, Any]]) -> None:
                 ):
                     delta = 0.0
                 replacement_value = delta * (2 + candidate.get("carry_investment", 0) / 10)
+                lower_grade_fallback = any(
+                    max(alternative.get("support_values", {}).values(), default=0) < support_value
+                    for alternative in alternatives
+                )
+                # Universal premium sustain belongs on a current high-value
+                # carry before an old low-priority carry that has a practical
+                # fallback. Exact mechanics such as Jinhsi + Verina, and old
+                # carries whose sequences truly raise their priority, remain
+                # eligible instead of being banned by character name/version.
+                if (
+                    mechanic_fit == 0
+                    and support_value >= 8
+                    and lower_grade_fallback
+                    and candidate.get("carry_priority", 0) < CURRENT_META_SUPPORT_PRIORITY
+                ):
+                    gap = CURRENT_META_SUPPORT_PRIORITY - candidate.get("carry_priority", 0)
+                    replacement_value -= min(32.0, gap * max(1.0, support_value - 6) * 0.50)
+                elif mechanic_fit == 0 and support_value >= 8:
+                    # Between two legitimate generic-support users, prefer the
+                    # current higher-priority carry. This is intentionally a
+                    # small tie-breaker; exact mechanics and replacement loss
+                    # still dominate the choice.
+                    priority_edge = max(0.0, candidate.get("carry_priority", 0) - CURRENT_META_SUPPORT_PRIORITY)
+                    replacement_value += priority_edge * max(1.0, support_value - 6) * 0.04
             # Mechanical fit is valuable even when the support is not shared by
             # multiple carries in the current roster. Otherwise a unique modern
             # alternative (for example Suisui for Hiyuki) receives no credit and
@@ -1162,6 +1205,11 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
             for candidate in candidates
             if candidate.get("verified_template")
             and float(candidate.get("template_score") or 0) >= MIN_COMPLETE_ALL_TEAM_SCORE
+            and (
+                float(candidate.get("score") or 0) >= MIN_COMPLETE_ALL_COMBAT_SCORE
+                or int(candidate.get("readiness") or 0) >= 100
+            )
+            and float(candidate.get("weakest_core_readiness") or 0) >= MIN_COMPLETE_ALL_CORE_READINESS
             and not candidate.get("premium_core_mismatch")
         ]
     # Opportunity cost matters only when multiple teams compete for a unit.
