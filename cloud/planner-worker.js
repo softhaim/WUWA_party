@@ -1,4 +1,4 @@
-import {recommendInBrowser} from "./cloud-planner.js?v=20261003-roster-complete2";
+import {recommendInBrowser} from "./cloud-planner.js?v=20261007-gemini-thinking";
 
 self.onmessage=event=>{
   const {id,payload}=event.data||{};

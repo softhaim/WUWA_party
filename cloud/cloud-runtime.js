@@ -1,10 +1,10 @@
-import {initializeApp} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
-import {getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
-import {collection, doc, getDocs, getFirestore, serverTimestamp, setDoc, writeBatch} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
-import {getFunctions, httpsCallable} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-functions.js";
-import {initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app-check.js";
-import {getAI, getGenerativeModel, GoogleAIBackend} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-ai.js";
-import {recommendInBrowser} from "./cloud-planner.js?v=20261003-roster-complete2";
+import {initializeApp} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+import {getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+import {collection, doc, getDocs, getFirestore, serverTimestamp, setDoc, writeBatch} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+import {getFunctions, httpsCallable} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-functions.js";
+import {initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app-check.js";
+import {getAI, getGenerativeModel, GoogleAIBackend, ThinkingLevel} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-ai.js";
+import {recommendInBrowser} from "./cloud-planner.js?v=20261007-gemini-thinking";
 
 let plannerRequestId=0;
 
@@ -15,7 +15,7 @@ function runPlanner(payload,onProgress){
     },0));
   }
   return new Promise((resolve,reject)=>{
-    const worker=new Worker("./planner-worker.js?v=20261003-roster-complete2",{type:"module"});
+    const worker=new Worker("./planner-worker.js?v=20261007-gemini-thinking",{type:"module"});
     const id=++plannerRequestId;
     const stop=()=>worker.terminate();
     worker.onmessage=event=>{
@@ -141,14 +141,21 @@ export async function createCloudRuntime(config){
       const Provider=config.appCheckProvider==="v3"?ReCaptchaV3Provider:ReCaptchaEnterpriseProvider;
       initializeAppCheck(app,{provider:new Provider(config.appCheckSiteKey),isTokenAutoRefreshEnabled:true});
       const ai=getAI(app,{backend:new GoogleAIBackend()});
+      // Gemini 3.6+ rejects custom sampling parameters and upcoming models no
+      // longer remap thinkingBudget. Keep only the supported thinking level
+      // plus the response-length guard used by the chat UI.
+      const generationConfig={
+        thinkingConfig:{thinkingLevel:ThinkingLevel.MEDIUM},
+        maxOutputTokens:2600
+      };
       aiModel=getGenerativeModel(ai,{
         model:config.aiModel||"gemini-3.8-flash",
-        generationConfig:{temperature:0.2,topP:0.85,maxOutputTokens:2600}
+        generationConfig
       });
       if(config.aiFallbackModel!==false){
         aiFallbackModel=getGenerativeModel(ai,{
           model:config.aiFallbackModel||"gemini-3.1-flash-lite",
-          generationConfig:{temperature:0.2,topP:0.85,maxOutputTokens:2600}
+          generationConfig
         });
       }
     }catch(error){

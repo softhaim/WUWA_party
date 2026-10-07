@@ -39,6 +39,17 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertIn("runtime.chat", cloud_runtime)
         self.assertIn("검증된 추천 구성", cloud_runtime)
 
+    def test_cloud_gemini_config_uses_thinking_level_without_deprecated_sampling(self):
+        root = Path(__file__).resolve().parents[1]
+        cloud_runtime = (root / "cloud" / "cloud-runtime.js").read_text(encoding="utf-8")
+        self.assertIn("ThinkingLevel.MEDIUM", cloud_runtime)
+        self.assertIn("thinkingConfig", cloud_runtime)
+        self.assertNotRegex(cloud_runtime, r"thinkingBudget\s*:")
+        self.assertNotRegex(cloud_runtime, r"temperature\s*:")
+        self.assertNotRegex(cloud_runtime, r"topP\s*:")
+        self.assertNotRegex(cloud_runtime, r"topK\s*:")
+        self.assertIn("firebasejs/12.19.0/firebase-ai.js", cloud_runtime)
+
     def test_cloud_planner_does_not_require_functions_or_fireworks(self):
         root = Path(__file__).resolve().parents[1]
         environment = (root / "cloud" / "cloud-env.example.js").read_text(encoding="utf-8")
