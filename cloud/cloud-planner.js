@@ -64,6 +64,17 @@ function evaluateTeam(members,rules,templateMap){
   const carries=members.filter(member=>profiles[member.id].position==="carry");
   if(!carries.length)return null;
   const positions=Object.fromEntries(members.map(member=>[member.id,template?.positions?.[member.id]||profiles[member.id].position||"amplifier"]));
+  let coreFallback=null;
+  if(!template){
+    const candidateCore=new Set(members.filter(member=>positions[member.id]!=="support").map(member=>member.id));
+    const candidateSupports=members.filter(member=>positions[member.id]==="support");
+    const flexible=candidateSupports.length===1&&candidateSupports.every(member=>profiles[member.id].sustain&&((profiles[member.id].archetypes||[]).includes("범용")||Number(profiles[member.id].support_value||0)<=6));
+    if(candidateCore.size===2&&flexible)for(const source of rules.templates||[]){
+      if(Number(source.score||0)<90)continue;
+      const sourceCore=new Set((source.members||[]).filter(id=>(source.positions?.[id]||rules.profiles?.[id]?.position)!=="support"));
+      if(sourceCore.size===candidateCore.size&&[...candidateCore].every(id=>sourceCore.has(id))&&(!coreFallback||Number(source.score||0)>Number(coreFallback.score||0)))coreFallback=source;
+    }
+  }
   const ready={},invested={};
   for(const member of members){
     let value=readiness(member);
@@ -79,6 +90,9 @@ function evaluateTeam(members,rules,templateMap){
     const early=template.status==="early";
     reason=`${preview?"출시 전 프리뷰":early?"출시 초기 조합":"메타 조합"} · ${template.label}`;
     tags=template.tags||[];confidence=preview?"프리뷰":early?"초기 검증":"높음";
+  }else if(coreFallback){
+    const coreNames=members.filter(member=>positions[member.id]!=="support").map(member=>member.name_ko),supportName=members.find(member=>positions[member.id]==="support").name_ko;
+    rawScore=Math.max(72,Number(coreFallback.score)-10);tags=["검증된 2인 코어","대체 서포터"];reason=`코어 보존형 대체 · ${coreNames.join("·")} + 남은 서포터 ${supportName}`;confidence="중간";
   }else{
     const carry=carries.reduce((best,item)=>(profiles[item.id].meta_value||5)>(profiles[best.id].meta_value||5)?item:best,carries[0]);
     const damage=new Set(profiles[carry.id].damage||[]), archetypes=new Set(profiles[carry.id].archetypes||[]);
@@ -95,31 +109,35 @@ function evaluateTeam(members,rules,templateMap){
   }
   const primary=carries.reduce((best,item)=>(profiles[item.id].meta_value||5)>(profiles[best.id].meta_value||5)?item:best,carries[0]);
   const carryNeeds=new Set([...(profiles[primary.id].damage||[]),...(profiles[primary.id].archetypes||[])]);
-  const genericSupportTags=new Set(["범용","피해 증가","회복","보호","치명타"]),supportFit={},supportValues={};
-  for(const member of members){if(positions[member.id]!=="support")continue;const supplied=new Set([...(profiles[member.id].provides||[]),...(profiles[member.id].archetypes||[])]);supportFit[member.usage_key]=[...supplied].filter(tag=>carryNeeds.has(tag)&&!genericSupportTags.has(tag)).length;supportValues[member.usage_key]=Number(profiles[member.id].support_value||0);}
+  const genericSupportTags=new Set(["범용","피해 증가","회복","보호","치명타"]),supportFit={},supportValues={},genericSupports={};
+  for(const member of members){if(positions[member.id]!=="support")continue;const supplied=new Set([...(profiles[member.id].provides||[]),...(profiles[member.id].archetypes||[])]);supportFit[member.usage_key]=[...supplied].filter(tag=>carryNeeds.has(tag)&&!genericSupportTags.has(tag)).length;supportValues[member.usage_key]=Number(profiles[member.id].support_value||0);genericSupports[member.usage_key]=(profiles[member.id].archetypes||[]).includes("범용");}
   const details={
-    composition:round1((template?template.score:Math.min(88,rawScore))/100*SCORE_WEIGHTS.composition),
+    composition:round1((template?template.score:coreFallback?Number(coreFallback.score)-10:Math.min(88,rawScore))/100*SCORE_WEIGHTS.composition),
     meta:round1(Math.min(1,(profiles[primary.id].meta_value||5)/10)*SCORE_WEIGHTS.meta),
     investment:round1(weightedAverage(members,positions,invested)*SCORE_WEIGHTS.investment),
     build:round1(weightedAverage(members,positions,ready)*SCORE_WEIGHTS.build)
   };
   const score=round1(Math.min(100,Object.values(details).reduce((a,b)=>a+b,0)));
   const highEnd=new Set([...(rules.high_end_cores||[]),...(rules.preview_high_end_cores||[])].map(core=>[...core].sort().join(":")));
-  const tier=highEnd.has(key)?"bis":template?.score>=95?"high":template?.score>=90?"alternative":template?.tier;
-  let allocation=score+(template?3:0)+({bis:10,high:7,alternative:3,expansion:0}[tier]||0);
+  const tier=highEnd.has(key)?"bis":template?.score>=95?"high":template?.score>=90?"alternative":coreFallback?"expansion":template?.tier;
+  let allocation=score+(template?3:coreFallback?1:0)+({bis:10,high:7,alternative:3,expansion:0}[tier]||0);
   if(template&&["3.5","3.5-beta","3.6","3.6-beta","3.7","3.7-beta"].includes(template.patch)&&tier==="bis")allocation+=1;
   const premium=Math.max(0,...members.filter(member=>positions[member.id]==="support").map(member=>profiles[member.id].support_value||0));
   if(premium>=8&&weakestCore<.7)allocation-=(.7-weakestCore)*premium*2.8;
   const primaryCarryPriority=carryPriority(primary,profiles[primary.id]);
   const carryInvestment=Math.max(...carries.map(member=>((profiles[member.id].meta_value||5)*.8+(Number(member.state.sequence)||0)*2+(member.state.signature_weapon?1.5:0))*ready[member.id]));
   allocation+=carryInvestment+primaryCarryPriority*.25;
-  return {key,members,score,allocation_score:round1(allocation),reason,tags,confidence,readiness:Math.round(Object.values(ready).reduce((a,b)=>a+b,0)/members.length*100),weakest_core_readiness:round1(weakestCore),score_details:details,member_positions:template?.positions||{},effective_tier:tier,primary_carry_id:primary.id,carry_investment:round1(carryInvestment),carry_priority:round1(primaryCarryPriority),support_fit:supportFit,support_values:supportValues,premium_core_mismatch:premium>=8&&weakestCore<.45,verified_template:Boolean(template),template_id:template?.id,template_score:template?.score,meta_tier:template?.meta_tier||profiles[primary.id].meta_tier};
+  return {key,members,score,allocation_score:round1(allocation),reason,tags,confidence,readiness:Math.round(Object.values(ready).reduce((a,b)=>a+b,0)/members.length*100),weakest_core_readiness:round1(weakestCore),score_details:details,member_positions:template?.positions||{},effective_tier:tier,primary_carry_id:primary.id,carry_investment:round1(carryInvestment),carry_priority:round1(primaryCarryPriority),support_fit:supportFit,support_values:supportValues,generic_supports:genericSupports,premium_core_mismatch:premium>=8&&weakestCore<.45,verified_template:Boolean(template),verified_core_fallback:Boolean(coreFallback),template_id:template?.id||(coreFallback?`core-fallback:${coreFallback.id}`:null),template_score:template?.score||(coreFallback?Number(coreFallback.score)-10:null),meta_tier:template?.meta_tier||profiles[primary.id].meta_tier};
 }
 
 function applyOpportunity(candidates){
-  const byCarry=new Map();
-  for(const candidate of candidates){if(!byCarry.has(candidate.primary_carry_id))byCarry.set(candidate.primary_carry_id,[]);byCarry.get(candidate.primary_carry_id).push(candidate);}
-  for(const candidate of candidates){let bestValue=null;for(const member of candidate.members){const position=candidate.member_positions[member.id]||member._position;if(member.id===candidate.primary_carry_id||position!=="support")continue;const core=new Set(candidate.members.filter(item=>(candidate.member_positions[item.id]||item._position)!=="support").map(item=>item.usage_key));const alternatives=(byCarry.get(candidate.primary_carry_id)||[]).filter(team=>{if(team.members.some(item=>item.id===member.id))return false;const otherCore=new Set(team.members.filter(item=>(team.member_positions[item.id]||item._position)!=="support").map(item=>item.usage_key));return core.size===otherCore.size&&[...core].every(key=>otherCore.has(key));});const fit=Number(candidate.support_fit?.[member.usage_key]||0),supportValue=Number(candidate.support_values?.[member.usage_key]||0);let replacement=0;if(alternatives.length){let delta=candidate.score-Math.max(...alternatives.map(team=>team.score));if(candidate.effective_tier==="bis"&&delta>=0&&delta<=1.5&&alternatives.some(team=>team.effective_tier==="bis"&&candidate.score-team.score<=1.5))delta=0;replacement=delta*(2+candidate.carry_investment/10);const lowerFallback=alternatives.some(team=>Math.max(0,...Object.values(team.support_values||{}))<supportValue);if(fit===0&&supportValue>=8&&lowerFallback&&candidate.carry_priority<CURRENT_META_SUPPORT_PRIORITY){const gap=CURRENT_META_SUPPORT_PRIORITY-candidate.carry_priority;replacement-=Math.min(32,gap*Math.max(1,supportValue-6)*.5);}else if(fit===0&&supportValue>=8){const edge=Math.max(0,candidate.carry_priority-CURRENT_META_SUPPORT_PRIORITY);replacement+=edge*Math.max(1,supportValue-6)*.04;}}const value=replacement+fit*4;bestValue=bestValue===null?value:Math.max(bestValue,value);}candidate.allocation_score=round1(candidate.allocation_score+(bestValue??0));}
+  const byCarry=new Map(),mechanicClaims=new Map(),resourceLimits=new Map();
+  for(const candidate of candidates){
+    if(!byCarry.has(candidate.primary_carry_id))byCarry.set(candidate.primary_carry_id,[]);byCarry.get(candidate.primary_carry_id).push(candidate);
+    const coreKey=candidate.members.filter(item=>(candidate.member_positions[item.id]||item._position)!=="support").map(item=>item.usage_key).sort().join(":");
+    for(const member of candidate.members){const resource=member.usage_key;resourceLimits.set(resource,Math.max(resourceLimits.get(resource)||0,Number(member._usage_limit||member.state?.max_uses||1)));if(Number(candidate.support_fit?.[resource]||0)>0){if(!mechanicClaims.has(resource))mechanicClaims.set(resource,new Set());mechanicClaims.get(resource).add(`${candidate.primary_carry_id}|${coreKey}`);}}
+  }
+  for(const candidate of candidates){let bestValue=null;for(const member of candidate.members){const position=candidate.member_positions[member.id]||member._position;if(member.id===candidate.primary_carry_id||position!=="support")continue;const core=new Set(candidate.members.filter(item=>(candidate.member_positions[item.id]||item._position)!=="support").map(item=>item.usage_key));const alternatives=(byCarry.get(candidate.primary_carry_id)||[]).filter(team=>{if(team.members.some(item=>item.id===member.id))return false;const otherCore=new Set(team.members.filter(item=>(team.member_positions[item.id]||item._position)!=="support").map(item=>item.usage_key));return core.size===otherCore.size&&[...core].every(key=>otherCore.has(key));});const fit=Number(candidate.support_fit?.[member.usage_key]||0),supportValue=Number(candidate.support_values?.[member.usage_key]||0);let replacement=0;if(alternatives.length){let delta=candidate.score-Math.max(...alternatives.map(team=>team.score));if(candidate.effective_tier==="bis"&&delta>=0&&delta<=1.5&&alternatives.some(team=>team.effective_tier==="bis"&&candidate.score-team.score<=1.5))delta=0;replacement=delta*(2+candidate.carry_investment/10);const lowerFallback=alternatives.some(team=>Math.max(0,...Object.values(team.support_values||{}))<supportValue);const needed=mechanicClaims.get(member.usage_key)?.size||0,available=resourceLimits.get(member.usage_key)||1;if(fit===0&&lowerFallback&&candidate.generic_supports?.[member.usage_key]&&needed>=available)replacement-=12;if(fit===0&&supportValue>=8&&lowerFallback&&candidate.carry_priority<CURRENT_META_SUPPORT_PRIORITY){const gap=CURRENT_META_SUPPORT_PRIORITY-candidate.carry_priority;replacement-=Math.min(32,gap*Math.max(1,supportValue-6)*.5);}else if(fit===0&&supportValue>=8){const edge=Math.max(0,candidate.carry_priority-CURRENT_META_SUPPORT_PRIORITY);replacement+=edge*Math.max(1,supportValue-6)*.04;}}const value=replacement+fit*4;bestValue=bestValue===null?value:Math.max(bestValue,value);}candidate.allocation_score=round1(candidate.allocation_score+(bestValue??0));}
 }
 
 function applyCarryResourcePriority(candidates){
@@ -256,7 +274,7 @@ function extendAllocation(candidates,seed,count){
 }
 
 function serialize(teams,rules){
-  return [...teams].sort((a,b)=>b.score-a.score).map((team,index)=>({id:index+1,score:team.score,members:[...team.members].sort((a,b)=>POSITION_ORDER[team.member_positions[a.id]||a._position]-POSITION_ORDER[team.member_positions[b.id]||b._position]).map(member=>({id:member.id,name_ko:member.name_ko,image:member.image,role:member.role,element_ko:member.element_ko,slot:SLOT_NAMES[team.member_positions[member.id]||member._position]||member.role})),reason:team.reason,tags:team.tags,confidence:team.confidence,readiness:team.readiness,score_details:team.score_details,verified_template:team.verified_template,template_id:team.template_id,meta_tier:team.meta_tier}));
+  return [...teams].sort((a,b)=>b.score-a.score).map((team,index)=>({id:index+1,score:team.score,members:[...team.members].sort((a,b)=>POSITION_ORDER[team.member_positions[a.id]||a._position]-POSITION_ORDER[team.member_positions[b.id]||b._position]).map(member=>({id:member.id,name_ko:member.name_ko,image:member.image,role:member.role,element_ko:member.element_ko,slot:SLOT_NAMES[team.member_positions[member.id]||member._position]||member.role})),reason:team.reason,tags:team.tags,confidence:team.confidence,readiness:team.readiness,score_details:team.score_details,verified_template:team.verified_template,verified_core_fallback:team.verified_core_fallback,template_id:team.template_id,meta_tier:team.meta_tier}));
 }
 
 export function recommendInBrowser({characters,rules,roster,team_count=3,allow_inferred=false}){
@@ -270,7 +288,7 @@ export function recommendInBrowser({characters,rules,roster,team_count=3,allow_i
   const limits={};for(const member of available)limits[member.usage_key]=Math.max(limits[member.usage_key]||0,Number(member.state.max_uses)||1);for(const member of available)member._usage_limit=limits[member.usage_key];
   const maximum=Math.max(1,Math.floor(Object.values(limits).reduce((a,b)=>a+b,0)/3));const requested=String(team_count)==="all"?maximum:clamp(Number(team_count)||3,1,maximum);
   const templateMap=new Map((rules.templates||[]).map(template=>[[...template.members].sort().join(":"),template]));const candidates=[];
-  for(let a=0;a<available.length-2;a++)for(let b=a+1;b<available.length-1;b++)for(let c=b+1;c<available.length;c++){const team=evaluateTeam([available[a],available[b],available[c]],rules,templateMap);if(team&&(allow_inferred||team.verified_template)&&(!team.premium_core_mismatch||String(team_count)!=="all")&&(String(team_count)!=="all"||(Number(team.template_score||0)>=80&&(Number(team.score||0)>=79||Number(team.readiness||0)>=100)&&Number(team.weakest_core_readiness||0)>=.45)))candidates.push(team);}
+  for(let a=0;a<available.length-2;a++)for(let b=a+1;b<available.length-1;b++)for(let c=b+1;c<available.length;c++){const team=evaluateTeam([available[a],available[b],available[c]],rules,templateMap);if(team&&(allow_inferred||team.verified_template||team.verified_core_fallback)&&(!team.premium_core_mismatch||String(team_count)!=="all")&&(String(team_count)!=="all"||(Number(team.template_score||0)>=80&&(Number(team.score||0)>=79||Number(team.readiness||0)>=100)&&Number(team.weakest_core_readiness||0)>=.45)))candidates.push(team);}
   // A fully owned catalog produces tens of thousands of mechanically possible
   // triples. Opportunity-cost comparison is quadratic, so first retain the
   // strongest teams plus broad per-character coverage. This preserves roster

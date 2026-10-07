@@ -1,4 +1,4 @@
-import {recommendInBrowser} from "./cloud-planner.js?v=20261007-premium-support";
+import {recommendInBrowser} from "./cloud-planner.js?v=20261007-core-fallback";
 
 self.onmessage=event=>{
   const {id,payload}=event.data||{};

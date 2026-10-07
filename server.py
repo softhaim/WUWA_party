@@ -422,6 +422,40 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         member["id"]: member_positions.get(member["id"], profiles[member["id"]].get("position", "amplifier"))
         for member in members
     }
+    # Preserve a proven carry-amplifier core even when every authored sustain
+    # variant has exhausted its usage count. Only a real two-person core from a
+    # high-quality template plus a generic/low-value sustain is eligible; this
+    # must not reopen arbitrary element/tag mixtures.
+    core_fallback_source = None
+    if not template:
+        candidate_core = {
+            member["id"] for member in members if resolved_positions[member["id"]] != "support"
+        }
+        candidate_supports = [
+            member for member in members if resolved_positions[member["id"]] == "support"
+        ]
+        support_is_flexible = bool(candidate_supports) and all(
+            profiles[member["id"]].get("sustain")
+            and (
+                "범용" in set(profiles[member["id"]].get("archetypes", []))
+                or float(profiles[member["id"]].get("support_value", 0)) <= 6
+            )
+            for member in candidate_supports
+        )
+        if len(candidate_core) == 2 and len(candidate_supports) == 1 and support_is_flexible:
+            for source in rules.get("templates", []):
+                if float(source.get("score", 0)) < 90:
+                    continue
+                source_positions = source.get("positions", {})
+                source_core = {
+                    cid for cid in source.get("members", [])
+                    if source_positions.get(cid, rules.get("profiles", {}).get(cid, {}).get("position")) != "support"
+                }
+                if source_core == candidate_core and (
+                    core_fallback_source is None
+                    or float(source.get("score", 0)) > float(core_fallback_source.get("score", 0))
+                ):
+                    core_fallback_source = source
     investment = sum(member["power"] for member in members) / len(members)
     readiness = {}
     for member in members:
@@ -448,6 +482,15 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         reason = f"{'출시 전 프리뷰' if preview else '출시 초기 조합' if early else '메타 조합'} · {template['label']}"
         tags = template["tags"]
         confidence = "프리뷰" if preview else "초기 검증" if early else "높음"
+    elif core_fallback_source:
+        core_names = [member["name_ko"] for member in members if resolved_positions[member["id"]] != "support"]
+        support_name = next(
+            member["name_ko"] for member in members if resolved_positions[member["id"]] == "support"
+        )
+        score = max(72.0, float(core_fallback_source["score"]) - 10)
+        tags = ["검증된 2인 코어", "대체 서포터"]
+        reason = f"코어 보존형 대체 · {'·'.join(core_names)} + 남은 서포터 {support_name}"
+        confidence = "중간"
     else:
         best_carry = carries[0]
         carry_profile = profiles[best_carry["id"]]
@@ -502,6 +545,7 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
     generic_support_tags = {"범용", "피해 증가", "회복", "보호", "치명타"}
     support_fit = {}
     support_values = {}
+    generic_supports = {}
     for member in members:
         if resolved_positions[member["id"]] != "support":
             continue
@@ -511,7 +555,13 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         resource_key = member.get("usage_key", member["id"])
         support_fit[resource_key] = len(matches)
         support_values[resource_key] = float(profile.get("support_value", 0))
-    composition_quality = (template["score"] if template else min(88.0, score)) / 100
+        generic_supports[resource_key] = "범용" in set(profile.get("archetypes", []))
+    composition_source = (
+        template["score"] if template
+        else float(core_fallback_source["score"]) - 10 if core_fallback_source
+        else min(88.0, score)
+    )
+    composition_quality = composition_source / 100
     meta_quality = min(1.0, profiles[primary_carry["id"]].get("meta_value", 5) / 10)
     investment_average = weighted_member_average(members, resolved_positions, investments)
     readiness_average = weighted_member_average(members, resolved_positions, readiness)
@@ -542,12 +592,14 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         effective_tier = "high"
     elif template and template["score"] >= 90:
         effective_tier = "alternative"
+    elif core_fallback_source:
+        effective_tier = "expansion"
     else:
         effective_tier = template.get("tier") if template else None
     # Verified template scores already include the support's contribution.
     # Adding support_value again double-counted premium supports and made a team
     # hoard Chisa even when it had an excellent Aero Rover replacement.
-    allocation_score = score + (3 if template else 0)
+    allocation_score = score + (3 if template else 1 if core_fallback_source else 0)
     if template:
         allocation_score += tier_bonus.get(effective_tier, 0)
         # A tiny recency tie-breaker keeps newly released BiS cores from losing
@@ -605,11 +657,13 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         "carry_priority": round(primary_carry_priority, 1),
         "support_fit": support_fit,
         "support_values": support_values,
+        "generic_supports": generic_supports,
         "opportunity_bonus": 0.0,
         "premium_core_mismatch": premium_core_mismatch,
         "verified_template": bool(template),
-        "template_id": template.get("id") if template else None,
-        "template_score": template.get("score") if template else None,
+        "verified_core_fallback": bool(core_fallback_source),
+        "template_id": template.get("id") if template else f"core-fallback:{core_fallback_source['id']}" if core_fallback_source else None,
+        "template_score": template.get("score") if template else float(core_fallback_source["score"]) - 10 if core_fallback_source else None,
         "meta_tier": (template.get("meta_tier") if template else None) or profiles[primary_carry["id"]].get("meta_tier"),
     }
 
@@ -623,9 +677,24 @@ def apply_opportunity_value(candidates: list[dict[str, Any]]) -> None:
     claims from another team no longer consume an invisible support slot.
     """
     by_carry: dict[str, list[dict[str, Any]]] = {}
+    mechanic_claims: dict[str, set[tuple[str, tuple[str, ...]]]] = {}
+    resource_limits: dict[str, int] = {}
     for candidate in candidates:
         carry_id = candidate["primary_carry_id"]
         by_carry.setdefault(carry_id, []).append(candidate)
+        core_key = tuple(sorted(
+            item.get("usage_key", item["id"])
+            for item in candidate["members"]
+            if candidate.get("member_positions", {}).get(item["id"], item.get("_position")) != "support"
+        ))
+        for member in candidate["members"]:
+            resource_key = member.get("usage_key", member["id"])
+            resource_limits[resource_key] = max(
+                resource_limits.get(resource_key, 0),
+                int(member.get("_usage_limit", member.get("state", {}).get("max_uses", 1))),
+            )
+            if float(candidate.get("support_fit", {}).get(resource_key, 0)) > 0:
+                mechanic_claims.setdefault(resource_key, set()).add((carry_id, core_key))
 
     for candidate in candidates:
         carry_id = candidate["primary_carry_id"]
@@ -675,6 +744,22 @@ def apply_opportunity_value(candidates: list[dict[str, Any]]) -> None:
                     max(alternative.get("support_values", {}).values(), default=0) < support_value
                     for alternative in alternatives
                 )
+                # Reserve the available copies of a support for cores that
+                # actually require its unique mechanic before a generic user
+                # takes it. For example, one Verina belongs with Jinhsi's
+                # coordinated-attack core while Carlotta-Zhezhi can retain its
+                # proven two-person core and use a remaining sustain. If a user
+                # allows more copies than there are mechanic-specific claims,
+                # the surplus remains available to generic teams.
+                mechanic_slots_needed = len(mechanic_claims.get(resource_key, set()))
+                mechanic_slots_available = resource_limits.get(resource_key, 1)
+                if (
+                    mechanic_fit == 0
+                    and lower_grade_fallback
+                    and candidate.get("generic_supports", {}).get(resource_key, False)
+                    and mechanic_slots_needed >= mechanic_slots_available
+                ):
+                    replacement_value -= 12.0
                 # Universal premium sustain belongs on a current high-value
                 # carry before an old low-priority carry that has a practical
                 # fallback. Exact mechanics such as Jinhsi + Verina, and old
@@ -1140,6 +1225,7 @@ def serialize_teams(selected: list[dict[str, Any]], rules: dict[str, Any]) -> li
             "readiness": candidate.get("readiness", 0),
             "score_details": candidate.get("score_details", {}),
             "verified_template": candidate.get("verified_template", False),
+            "verified_core_fallback": candidate.get("verified_core_fallback", False),
             "template_id": candidate.get("template_id"),
             "meta_tier": candidate.get("meta_tier"),
         })
@@ -1197,13 +1283,13 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
         # but it must never turn leftover units into a fake endgame party.
         candidates = [
             candidate for candidate in candidates
-            if candidate.get("verified_template")
+            if candidate.get("verified_template") or candidate.get("verified_core_fallback")
         ]
     if str(requested_count) == "all":
         candidates = [
             candidate
             for candidate in candidates
-            if candidate.get("verified_template")
+            if (candidate.get("verified_template") or candidate.get("verified_core_fallback"))
             and float(candidate.get("template_score") or 0) >= MIN_COMPLETE_ALL_TEAM_SCORE
             and (
                 float(candidate.get("score") or 0) >= MIN_COMPLETE_ALL_COMBAT_SCORE

@@ -1062,13 +1062,16 @@ class ResonanceLabTests(unittest.TestCase):
             for allocation in allocations[1:]
         ))
 
-    def test_all_keeps_only_complete_verified_teams_instead_of_filling_capacity(self):
+    def test_all_keeps_complete_templates_or_verified_core_fallbacks(self):
         ids = ("hiyuki", "lucilla", "chisa", "aemeath", "denia", "mornye", "camellya", "sanhua", "shorekeeper", "jinhsi", "zhezhi", "verina", "jiyan", "mortefi", "baizhi")
         roster = {cid: {"owned": True, "level": 90, "build_status": "완성", "max_uses": 1} for cid in ids}
         result = server.recommend({"roster": roster, "team_count": "all"})
-        self.assertLess(result["maximum_team_count"], result["capacity_upper_bound"])
+        self.assertLessEqual(result["maximum_team_count"], result["capacity_upper_bound"])
         self.assertTrue(result["teams"])
-        self.assertTrue(all(team["verified_template"] for team in result["teams"]))
+        self.assertTrue(all(
+            team["verified_template"] or team.get("verified_core_fallback")
+            for team in result["teams"]
+        ))
         self.assertTrue(all("호환 조합" not in team["reason"] for team in result["teams"]))
 
     def test_ciaccona_is_reserved_for_complete_cartethyia_shell(self):
@@ -1121,7 +1124,7 @@ class ResonanceLabTests(unittest.TestCase):
         for configuration in result["configurations"]:
             used = set()
             for team in configuration["teams"]:
-                self.assertTrue(team["verified_template"])
+                self.assertTrue(team["verified_template"] or team.get("verified_core_fallback"))
                 for member in team["members"]:
                     key = server.usage_key(member["id"])
                     self.assertNotIn(key, used)
@@ -1355,6 +1358,33 @@ class ResonanceLabTests(unittest.TestCase):
         teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
         self.assertTrue(any({"carlotta", "zhezhi"} < team for team in teams))
         self.assertTrue(any({"jinhsi", "yinlin"} < team for team in teams))
+
+    def test_verified_core_uses_remaining_support_without_stealing_mechanic_support(self):
+        roster = {
+            cid: {
+                "owned": True,
+                "level": 90,
+                "build_status": "완성",
+                "max_uses": 1,
+                "signature_weapon": True,
+            }
+            for cid in (
+                "galbrena", "qiuyuan", "shorekeeper",
+                "jinhsi", "yinlin", "verina",
+                "carlotta", "zhezhi", "buling",
+            )
+        }
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        teams = {
+            frozenset(member["id"] for member in team["members"]): team
+            for team in result["teams"]
+        }
+        self.assertIn(frozenset(("galbrena", "qiuyuan", "shorekeeper")), teams)
+        self.assertIn(frozenset(("jinhsi", "yinlin", "verina")), teams)
+        fallback_key = frozenset(("carlotta", "zhezhi", "buling"))
+        self.assertIn(fallback_key, teams)
+        self.assertTrue(teams[fallback_key]["verified_core_fallback"])
+        self.assertIn("코어 보존형 대체", teams[fallback_key]["reason"])
 
     def test_unbuilt_core_does_not_take_premium_support_from_ready_core(self):
         chars = {c["id"]: c for c in server.load_characters()}
