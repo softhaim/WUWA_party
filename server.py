@@ -1035,23 +1035,42 @@ def optimize_complete_allocations(
     # Beam search intentionally focuses on the best A allocation. Add one
     # count-preserving forced variant per omitted carry so B/C can expose other
     # valid cores (for example Zani/Phoebe) instead of near-duplicates of A.
-    best_by_omitted_carry: dict[str, dict[str, Any]] = {}
+    candidates_by_omitted_carry: dict[str, list[dict[str, Any]]] = {}
     for candidate in candidates:
         carry_id = candidate["primary_carry_id"]
         if carry_id in primary_carries:
             continue
-        current = best_by_omitted_carry.get(carry_id)
-        if current is None or candidate["allocation_score"] > current["allocation_score"]:
-            best_by_omitted_carry[carry_id] = candidate
-    for seed in best_by_omitted_carry.values():
-        variant = greedy_forced_variant(seed)
-        if len(variant) != len(unique_states[0][0]):
-            continue
-        key = tuple(sorted(team["key"] for team in variant))
-        if key in seen:
-            continue
-        seen.add(key)
-        unique_states.append((variant, sum(team["allocation_score"] for team in variant)))
+        candidates_by_omitted_carry.setdefault(carry_id, []).append(candidate)
+    baseline_count = len(unique_states[0][0])
+    for carry_candidates in candidates_by_omitted_carry.values():
+        # The highest-scoring shell may consume a premium support and remain
+        # stuck at ten teams, while a lower-scoring verified-core fallback can
+        # keep that carry and raise the account to eleven. Try several shells
+        # per omitted carry and rank cardinality before score.
+        for seed in sorted(
+            carry_candidates,
+            key=lambda item: item["allocation_score"],
+            reverse=True,
+        )[:8]:
+            variant = greedy_forced_variant(seed)
+            if len(variant) < baseline_count:
+                continue
+            key = tuple(sorted(team["key"] for team in variant))
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_states.append((variant, sum(team["allocation_score"] for team in variant)))
+
+    # Roster-wide mode is cardinality-first. If any recovery path reaches more
+    # complete teams than the score-pruned beam, every displayed configuration
+    # must use that larger count instead of continuing to show ten-team plans.
+    maximum_found = max(len(selected) for selected, _ in unique_states)
+    unique_states = [
+        (selected, total)
+        for selected, total in unique_states
+        if len(selected) == maximum_found
+    ]
+    unique_states.sort(key=lambda item: item[1], reverse=True)
 
     # A is the highest-value allocation. B/C deliberately cover different
     # carries instead of repeating A with one support swapped, so users can see

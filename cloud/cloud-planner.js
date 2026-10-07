@@ -208,7 +208,7 @@ function optimizeComplete(candidates,limit,alternatives=3){
     states=[...deduplicated.values()].sort((a,b)=>b.total-a.total).slice(0,width);deepest=states;
   }
   deepest.sort((a,b)=>b.total-a.total);
-  const unique=[],seen=new Set();for(const state of deepest){const key=state.teams.map(team=>team.key).sort().join("||");if(seen.has(key))continue;seen.add(key);unique.push(state);}
+  let unique=[];const seen=new Set();for(const state of deepest){const key=state.teams.map(team=>team.key).sort().join("||");if(seen.has(key))continue;seen.add(key);unique.push(state);}
   if(!unique.length)return [];
   const primaryCarries=new Set(unique[0].teams.map(team=>team.primary_carry_id));
   const greedyForced=seed=>{
@@ -227,8 +227,10 @@ function optimizeComplete(candidates,limit,alternatives=3){
     }
     return teams;
   };
-  const bestByCarry=new Map();for(const candidate of candidates){if(primaryCarries.has(candidate.primary_carry_id))continue;const current=bestByCarry.get(candidate.primary_carry_id);if(!current||candidate.allocation_score>current.allocation_score)bestByCarry.set(candidate.primary_carry_id,candidate);}
-  for(const seed of bestByCarry.values()){const teams=greedyForced(seed);if(teams.length!==unique[0].teams.length)continue;const key=teams.map(team=>team.key).sort().join("||");if(seen.has(key))continue;seen.add(key);unique.push({teams,total:teams.reduce((sum,team)=>sum+team.allocation_score,0)});}
+  const candidatesByCarry=new Map();for(const candidate of candidates){if(primaryCarries.has(candidate.primary_carry_id))continue;if(!candidatesByCarry.has(candidate.primary_carry_id))candidatesByCarry.set(candidate.primary_carry_id,[]);candidatesByCarry.get(candidate.primary_carry_id).push(candidate);}
+  const baselineCount=unique[0].teams.length;
+  for(const carryCandidates of candidatesByCarry.values())for(const seed of [...carryCandidates].sort((a,b)=>b.allocation_score-a.allocation_score).slice(0,8)){const teams=greedyForced(seed);if(teams.length<baselineCount)continue;const key=teams.map(team=>team.key).sort().join("||");if(seen.has(key))continue;seen.add(key);unique.push({teams,total:teams.reduce((sum,team)=>sum+team.allocation_score,0)});}
+  const maximumFound=Math.max(...unique.map(state=>state.teams.length));unique=unique.filter(state=>state.teams.length===maximumFound).sort((a,b)=>b.total-a.total);
   const result=[unique.shift().teams],covered=new Set(result[0].map(team=>team.primary_carry_id));
   while(unique.length&&result.length<alternatives){
     let best=0,bestNew=-1,bestTotal=-Infinity;

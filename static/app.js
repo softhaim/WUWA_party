@@ -46,7 +46,7 @@ if(!IS_CLOUD) installLive2dLocalCacheProxy();
 
 async function initializeCloud(){
   if(!IS_CLOUD)return;
-  const module=await import("./cloud-runtime.js?v=20261007-core-fallback");
+  const module=await import("./cloud-runtime.js?v=20261008-cardinality");
   state.cloud=await module.createCloudRuntime(window.RESONANCE_CLOUD_CONFIG);
   state.user=state.cloud.user;
   renderAuthState();

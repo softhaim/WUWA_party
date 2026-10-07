@@ -1386,6 +1386,39 @@ class ResonanceLabTests(unittest.TestCase):
         self.assertTrue(teams[fallback_key]["verified_core_fallback"])
         self.assertIn("코어 보존형 대체", teams[fallback_key]["reason"])
 
+    def test_all_is_not_capped_at_ten_and_keeps_carlotta_core_in_every_plan(self):
+        roster = {
+            cid: {
+                "owned": True,
+                "level": 90,
+                "build_status": "완성",
+                "max_uses": 1,
+                "signature_weapon": True,
+            }
+            for cid in (
+                "aemeath", "denia", "chisa", "hiyuki", "lucilla", "suisui",
+                "qingxiao", "lynae", "mornye", "hsin", "rover-electro",
+                "lucy", "rebecca", "cartethyia", "ciaccona", "galbrena",
+                "iuno", "shorekeeper", "phrolova", "qiuyuan", "cantarella",
+                "jinhsi", "yinlin", "verina", "camellya", "sanhua", "baizhi",
+                "carlotta", "zhezhi", "buling",
+            )
+        }
+        for cid in ("chisa", "suisui", "mornye", "shorekeeper", "verina"):
+            roster[cid]["max_uses"] = 2
+
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        self.assertEqual(result["maximum_team_count"], 11)
+        self.assertEqual(result["capacity_upper_bound"], 11)
+        self.assertTrue(result["configurations"])
+        for configuration in result["configurations"]:
+            self.assertEqual(configuration["team_count"], 11)
+            teams = [
+                {member["id"] for member in team["members"]}
+                for team in configuration["teams"]
+            ]
+            self.assertTrue(any({"carlotta", "zhezhi"} <= team for team in teams))
+
     def test_unbuilt_core_does_not_take_premium_support_from_ready_core(self):
         chars = {c["id"]: c for c in server.load_characters()}
         rules = server.load_team_rules()
