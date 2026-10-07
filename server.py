@@ -488,6 +488,23 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         primary_carries,
         key=lambda member: profiles[member["id"]].get("meta_value", 5),
     )
+    # Generic sustain units are not interchangeable in every party.  Record
+    # exact mechanical matches so the global allocator can value Verina's
+    # coordinated attacks for Jinhsi, Mornye's Heavy/Off-Tune support for the
+    # matching modern carries, and similar future interactions without adding
+    # one-off character conditionals.
+    carry_needs = set(profiles[primary_carry["id"]].get("damage", [])) | set(
+        profiles[primary_carry["id"]].get("archetypes", [])
+    )
+    generic_support_tags = {"범용", "피해 증가", "회복", "보호", "치명타"}
+    support_fit = {}
+    for member in members:
+        if resolved_positions[member["id"]] != "support":
+            continue
+        profile = profiles[member["id"]]
+        supplied = set(profile.get("provides", [])) | set(profile.get("archetypes", []))
+        matches = (carry_needs & supplied) - generic_support_tags
+        support_fit[member.get("usage_key", member["id"])] = len(matches)
     composition_quality = (template["score"] if template else min(88.0, score)) / 100
     meta_quality = min(1.0, profiles[primary_carry["id"]].get("meta_value", 5) / 10)
     investment_average = weighted_member_average(members, resolved_positions, investments)
@@ -579,6 +596,7 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
         "primary_carry_id": primary_carry["id"],
         "carry_investment": round(carry_investment, 1),
         "carry_priority": round(primary_carry_priority, 1),
+        "support_fit": support_fit,
         "opportunity_bonus": 0.0,
         "premium_core_mismatch": premium_core_mismatch,
         "verified_template": bool(template),
@@ -589,39 +607,40 @@ def evaluate_team(members: tuple[dict[str, Any], ...], rules: dict[str, Any]) ->
 
 
 def apply_opportunity_value(candidates: list[dict[str, Any]]) -> None:
-    """Price a contested teammate by the combat loss when they are removed."""
+    """Price a contested support by its real replacement loss and mechanic fit.
+
+    A negative delta is meaningful: if a carry has a stronger alternative,
+    that fallback support must not reserve a usage ahead of a team that
+    actually needs its mechanic.  This is evaluated per candidate, so unused
+    claims from another team no longer consume an invisible support slot.
+    """
     by_carry: dict[str, list[dict[str, Any]]] = {}
-    member_carries: dict[str, set[str]] = {}
     for candidate in candidates:
         carry_id = candidate["primary_carry_id"]
         by_carry.setdefault(carry_id, []).append(candidate)
-        for member in candidate["members"]:
-            if member["id"] != carry_id:
-                member_carries.setdefault(member["id"], set()).add(carry_id)
 
     for candidate in candidates:
         carry_id = candidate["primary_carry_id"]
-        marginal_losses: list[float] = []
+        support_values: list[float] = []
         for member in candidate["members"]:
             member_id = member["id"]
             position = candidate.get("member_positions", {}).get(member_id, member.get("_position"))
             # Opportunity pricing is for the contested flex/sustain slot. Core
             # amplifiers such as Lucilla or Ciaccona are not interchangeable
             # supports and must not inflate every variant of the same core.
-            if (
-                member_id == carry_id
-                or position != "support"
-                or len(member_carries.get(member_id, set())) < 2
-            ):
+            if member_id == carry_id or position != "support":
                 continue
             alternatives = [
                 alternative
                 for alternative in by_carry.get(carry_id, [])
                 if member_id not in {item["id"] for item in alternative["members"]}
             ]
+            resource_key = member.get("usage_key", member["id"])
+            mechanic_fit = float(candidate.get("support_fit", {}).get(resource_key, 0))
+            replacement_value = 0.0
             if alternatives:
                 best_alternative = max(alternatives, key=lambda item: item["score"])
-                loss = max(0.0, candidate["score"] - best_alternative["score"])
+                delta = candidate["score"] - best_alternative["score"]
                 # Two verified BiS variants within a small practical margin are
                 # interchangeable. Pricing that tiny difference as scarcity made
                 # Hiyuki hoard Chisa even though Suisui is an equal high-end slot,
@@ -629,26 +648,31 @@ def apply_opportunity_value(candidates: list[dict[str, Any]]) -> None:
                 if (
                     candidate.get("effective_tier") == "bis"
                     and best_alternative.get("effective_tier") == "bis"
-                    and loss <= 1.5
+                    and 0 <= delta <= 1.5
                 ):
-                    loss = 0.0
-                marginal_losses.append(loss)
+                    delta = 0.0
+                replacement_value = delta * (2 + candidate.get("carry_investment", 0) / 10)
+            # Mechanical fit is valuable even when the support is not shared by
+            # multiple carries in the current roster. Otherwise a unique modern
+            # alternative (for example Suisui for Hiyuki) receives no credit and
+            # a contested Chisa is incorrectly pulled away from Aemeath.
+            support_values.append(replacement_value + mechanic_fit * 4)
         # The same raw upgrade is worth more on a recent, highly invested carry.
         # This makes sequence/signature investment affect who receives a scarce
         # support, instead of merely raising both of that carry's variants equally.
-        investment_factor = 2 + candidate.get("carry_investment", 0) / 10
-        opportunity_bonus = max(marginal_losses, default=0.0) * investment_factor
+        opportunity_bonus = max(support_values, default=0.0)
         candidate["opportunity_bonus"] = round(opportunity_bonus, 1)
         candidate["allocation_score"] = round(candidate["allocation_score"] + opportunity_bonus, 1)
 
 
 def apply_carry_resource_priority(candidates: list[dict[str, Any]]) -> None:
-    """Reserve contested amplifiers/supports for the strongest eligible carry.
+    """Reserve contested core amplifiers for the strongest eligible carry.
 
     Static team scores alone let a T1 fallback take Iuno from a T0 team or let
     an uninvested carry take Lynae/Mornye from an S3 carry. Only verified,
     high-quality templates establish a claim; inferred teams cannot monopolize
-    premium parts merely through broad compatibility tags.
+    premium core parts merely through broad compatibility tags. Sustain/support
+    slots are intentionally evaluated from actual replacement loss instead.
     """
     by_carry: dict[str, list[dict[str, Any]]] = {}
     for candidate in candidates:
@@ -665,6 +689,13 @@ def apply_carry_resource_priority(candidates: list[dict[str, Any]]) -> None:
         priority = float(candidate.get("carry_priority", 0))
         for member in candidate["members"]:
             if member["id"] != candidate["primary_carry_id"]:
+                position = candidate.get("member_positions", {}).get(member["id"], member.get("_position"))
+                # Sustain allocation is handled by apply_opportunity_value from
+                # the selected team's actual replacement loss. Static claims
+                # here previously reserved Mornye/Verina/Shorekeeper for teams
+                # that did not end up using them.
+                if position == "support":
+                    continue
                 resource_key = member.get("usage_key", member["id"])
                 alternatives = [
                     alternative for alternative in by_carry.get(candidate["primary_carry_id"], [])
@@ -702,6 +733,9 @@ def apply_carry_resource_priority(candidates: list[dict[str, Any]]) -> None:
         penalty = 0.0
         for member in candidate["members"]:
             if member["id"] == candidate["primary_carry_id"]:
+                continue
+            position = candidate.get("member_positions", {}).get(member["id"], member.get("_position"))
+            if position == "support":
                 continue
             resource_key = member.get("usage_key", member["id"])
             own_claim = candidate_claims.get(
@@ -802,8 +836,17 @@ def optimize_complete_allocations(
                 expanded.append((selected + [candidate], next_counts, total + candidate["allocation_score"]))
         if not expanded:
             break
-        expanded.sort(key=lambda item: item[2], reverse=True)
-        states = expanded[:beam_width]
+        # The same team set is reached in many selection orders. Keeping every
+        # permutation consumed the whole beam and hid otherwise valid complete
+        # allocations on large rosters. Collapse those equivalent states at
+        # every depth before applying the beam limit.
+        deduplicated: dict[tuple[str, ...], tuple[list[dict[str, Any]], dict[str, int], float]] = {}
+        for state in expanded:
+            key = tuple(sorted(team["key"] for team in state[0]))
+            previous = deduplicated.get(key)
+            if previous is None or state[2] > previous[2]:
+                deduplicated[key] = state
+        states = sorted(deduplicated.values(), key=lambda item: item[2], reverse=True)[:beam_width]
         deepest = states
 
     deepest.sort(key=lambda item: item[2], reverse=True)

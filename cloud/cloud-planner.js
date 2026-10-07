@@ -93,6 +93,9 @@ function evaluateTeam(members,rules,templateMap){
     tags=[...new Set([...buffs,...hits])].sort();reason=`호환 조합 · ${carry.name_ko}의 ${tags.join(", ")||"육성도와 속성"} 조건을 공유`;confidence=tags.length?"중간":"낮음";
   }
   const primary=carries.reduce((best,item)=>(profiles[item.id].meta_value||5)>(profiles[best.id].meta_value||5)?item:best,carries[0]);
+  const carryNeeds=new Set([...(profiles[primary.id].damage||[]),...(profiles[primary.id].archetypes||[])]);
+  const genericSupportTags=new Set(["범용","피해 증가","회복","보호","치명타"]),supportFit={};
+  for(const member of members){if(positions[member.id]!=="support")continue;const supplied=new Set([...(profiles[member.id].provides||[]),...(profiles[member.id].archetypes||[])]);supportFit[member.usage_key]=[...supplied].filter(tag=>carryNeeds.has(tag)&&!genericSupportTags.has(tag)).length;}
   const details={
     composition:round1((template?template.score:Math.min(88,rawScore))/100*SCORE_WEIGHTS.composition),
     meta:round1(Math.min(1,(profiles[primary.id].meta_value||5)/10)*SCORE_WEIGHTS.meta),
@@ -109,13 +112,13 @@ function evaluateTeam(members,rules,templateMap){
   const primaryCarryPriority=carryPriority(primary,profiles[primary.id]);
   const carryInvestment=Math.max(...carries.map(member=>((profiles[member.id].meta_value||5)*.8+(Number(member.state.sequence)||0)*2+(member.state.signature_weapon?1.5:0))*ready[member.id]));
   allocation+=carryInvestment+primaryCarryPriority*.25;
-  return {key,members,score,allocation_score:round1(allocation),reason,tags,confidence,readiness:Math.round(Object.values(ready).reduce((a,b)=>a+b,0)/members.length*100),score_details:details,member_positions:template?.positions||{},effective_tier:tier,primary_carry_id:primary.id,carry_investment:round1(carryInvestment),carry_priority:round1(primaryCarryPriority),premium_core_mismatch:premium>=8&&weakestCore<.45,verified_template:Boolean(template),template_id:template?.id,template_score:template?.score,meta_tier:template?.meta_tier||profiles[primary.id].meta_tier};
+  return {key,members,score,allocation_score:round1(allocation),reason,tags,confidence,readiness:Math.round(Object.values(ready).reduce((a,b)=>a+b,0)/members.length*100),score_details:details,member_positions:template?.positions||{},effective_tier:tier,primary_carry_id:primary.id,carry_investment:round1(carryInvestment),carry_priority:round1(primaryCarryPriority),support_fit:supportFit,premium_core_mismatch:premium>=8&&weakestCore<.45,verified_template:Boolean(template),template_id:template?.id,template_score:template?.score,meta_tier:template?.meta_tier||profiles[primary.id].meta_tier};
 }
 
 function applyOpportunity(candidates){
-  const byCarry=new Map(),memberCarries=new Map();
-  for(const candidate of candidates){if(!byCarry.has(candidate.primary_carry_id))byCarry.set(candidate.primary_carry_id,[]);byCarry.get(candidate.primary_carry_id).push(candidate);for(const member of candidate.members){if(member.id===candidate.primary_carry_id)continue;if(!memberCarries.has(member.id))memberCarries.set(member.id,new Set());memberCarries.get(member.id).add(candidate.primary_carry_id);}}
-  for(const candidate of candidates){let bestLoss=0;for(const member of candidate.members){const position=candidate.member_positions[member.id]||member._position;if(member.id===candidate.primary_carry_id||position!=="support"||(memberCarries.get(member.id)?.size||0)<2)continue;const alternatives=(byCarry.get(candidate.primary_carry_id)||[]).filter(team=>!team.members.some(item=>item.id===member.id));if(!alternatives.length)continue;let loss=Math.max(0,candidate.score-Math.max(...alternatives.map(team=>team.score)));if(candidate.effective_tier==="bis"&&alternatives.some(team=>team.effective_tier==="bis"&&candidate.score-team.score<=1.5))loss=0;bestLoss=Math.max(bestLoss,loss);}candidate.allocation_score=round1(candidate.allocation_score+bestLoss*(2+candidate.carry_investment/10));}
+  const byCarry=new Map();
+  for(const candidate of candidates){if(!byCarry.has(candidate.primary_carry_id))byCarry.set(candidate.primary_carry_id,[]);byCarry.get(candidate.primary_carry_id).push(candidate);}
+  for(const candidate of candidates){let bestValue=null;for(const member of candidate.members){const position=candidate.member_positions[member.id]||member._position;if(member.id===candidate.primary_carry_id||position!=="support")continue;const alternatives=(byCarry.get(candidate.primary_carry_id)||[]).filter(team=>!team.members.some(item=>item.id===member.id));let replacement=0;if(alternatives.length){let delta=candidate.score-Math.max(...alternatives.map(team=>team.score));if(candidate.effective_tier==="bis"&&delta>=0&&delta<=1.5&&alternatives.some(team=>team.effective_tier==="bis"&&candidate.score-team.score<=1.5))delta=0;replacement=delta*(2+candidate.carry_investment/10);}const fit=Number(candidate.support_fit?.[member.usage_key]||0),value=replacement+fit*4;bestValue=bestValue===null?value:Math.max(bestValue,value);}candidate.allocation_score=round1(candidate.allocation_score+(bestValue??0));}
 }
 
 function applyCarryResourcePriority(candidates){
@@ -125,6 +128,8 @@ function applyCarryResourcePriority(candidates){
     if(!candidate.verified_template||Number(candidate.template_score||0)<90)continue;
     for(const member of candidate.members){
       if(member.id===candidate.primary_carry_id)continue;
+      const position=candidate.member_positions[member.id]||member._position;
+      if(position==="support")continue;
       const alternatives=(byCarry.get(candidate.primary_carry_id)||[]).filter(team=>!team.members.some(item=>item.usage_key===member.usage_key));
       const bestAlternative=alternatives.length?Math.max(...alternatives.map(team=>team.score)):candidate.score-6;
       let loss=Math.max(0,candidate.score-bestAlternative);
@@ -141,6 +146,8 @@ function applyCarryResourcePriority(candidates){
     let penalty=0;
     for(const member of candidate.members){
       if(member.id===candidate.primary_carry_id)continue;
+      const position=candidate.member_positions[member.id]||member._position;
+      if(position==="support")continue;
       const own=candidateClaims.get(`${candidate.key}|${member.usage_key}`)??candidate.carry_priority??0;
       const ranked=[...(claims.get(member.usage_key)?.values()||[own])].sort((a,b)=>b-a),limit=Math.max(1,Number(member._usage_limit)||1),cutoff=ranked[Math.min(limit,ranked.length)-1];
       if(own<cutoff)penalty+=(cutoff-own)*.9;
@@ -177,7 +184,9 @@ function optimizeComplete(candidates,limit,alternatives=3){
       }
     }
     if(!expanded.length)break;
-    expanded.sort((a,b)=>b.total-a.total);states=expanded.slice(0,width);deepest=states;
+    const deduplicated=new Map();
+    for(const state of expanded){const key=state.teams.map(team=>team.key).sort().join("||"),previous=deduplicated.get(key);if(!previous||state.total>previous.total)deduplicated.set(key,state);}
+    states=[...deduplicated.values()].sort((a,b)=>b.total-a.total).slice(0,width);deepest=states;
   }
   deepest.sort((a,b)=>b.total-a.total);
   const unique=[],seen=new Set();for(const state of deepest){const key=state.teams.map(team=>team.key).sort().join("||");if(seen.has(key))continue;seen.add(key);unique.push(state);}

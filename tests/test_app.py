@@ -463,9 +463,9 @@ class ResonanceLabTests(unittest.TestCase):
         with patch.object(local_chatbot.chatbot, "answer") as answer:
             result = server.chat({"messages": [{"role": "user", "content": "치사를 2번 사용할 수 있을 때 내 파티풀에서는 어떻게 사용하는 게 좋아?"}], "roster": roster, "team_count": 3})
         answer.assert_not_called()
-        self.assertIn("치사 사용처는 1개 파티", result["answer"])
+        self.assertIn("치사 사용처는 2개 파티", result["answer"])
         self.assertIn("에이메스 / 데니아 / 치사", result["answer"])
-        self.assertIn("현재 조합 품질을 유지하면 1회만", result["answer"])
+        self.assertIn("카르티시아 / 샤콘 / 치사", result["answer"])
         self.assertNotIn("현재 보유풀 기준 고점 파티 12개", result["answer"])
         self.assertEqual(roster["chisa"]["max_uses"], original)
 
@@ -1377,6 +1377,51 @@ class ResonanceLabTests(unittest.TestCase):
         teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
         self.assertIn({"galbrena", "qiuyuan", "shorekeeper"}, teams)
         self.assertIn({"jinhsi", "yuanwu", "baizhi"}, teams)
+
+    def test_modern_supports_follow_carry_mechanics_before_old_generic_team(self):
+        roster = {
+            cid: {
+                "owned": True,
+                "level": 90,
+                "build_status": "완성",
+                "max_uses": 1,
+                "signature_weapon": True,
+            }
+            for cid in (
+                "galbrena", "qiuyuan", "jinhsi", "yinlin", "camellya", "sanhua",
+                "shorekeeper", "verina", "baizhi",
+            )
+        }
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+        # Current high-value carry receives the general premium support, while
+        # Verina's coordinated attacks are preserved for Jinhsi. The older
+        # Camellya shell remains complete with the practical fallback.
+        self.assertIn({"galbrena", "qiuyuan", "shorekeeper"}, teams)
+        self.assertIn({"jinhsi", "yinlin", "verina"}, teams)
+        self.assertIn({"camellya", "sanhua", "baizhi"}, teams)
+
+    def test_two_mornye_uses_finish_current_cores_before_generic_reservation(self):
+        roster = {
+            cid: {
+                "owned": True,
+                "level": 90,
+                "build_status": "완성",
+                "max_uses": 1,
+                "signature_weapon": True,
+            }
+            for cid in (
+                "aemeath", "denia", "chisa", "hiyuki", "lucilla", "suisui",
+                "qingxiao", "lynae", "mornye", "lucy", "rebecca",
+            )
+        }
+        roster["mornye"]["max_uses"] = 2
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        teams = [{member["id"] for member in team["members"]} for team in result["teams"]]
+        self.assertIn({"qingxiao", "lynae", "mornye"}, teams)
+        self.assertIn({"lucy", "rebecca", "mornye"}, teams)
+        self.assertIn({"aemeath", "denia", "chisa"}, teams)
+        self.assertIn({"hiyuki", "lucilla", "suisui"}, teams)
 
     def test_verified_roster_expansion_teams_are_recognized(self):
         expected = (
