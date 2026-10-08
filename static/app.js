@@ -14,8 +14,8 @@ const SPINE_SCRIPTS = [
 const NANOKA_LIVE2D_PREFIX = "https://static.nanoka.cc/assets/ww/";
 
 function localLive2dUrl(value){
-  if(IS_CLOUD) return value;
   if(typeof value!=="string"||!value.startsWith(NANOKA_LIVE2D_PREFIX)) return value;
+  if(IS_CLOUD) return `${location.origin}/live2d-assets/${value.slice(NANOKA_LIVE2D_PREFIX.length)}`;
   return `${API_BASE}/api/live2d-assets/${value.slice(NANOKA_LIVE2D_PREFIX.length)}`;
 }
 
@@ -42,11 +42,11 @@ function installLive2dLocalCacheProxy(){
   }
 }
 
-if(!IS_CLOUD) installLive2dLocalCacheProxy();
+installLive2dLocalCacheProxy();
 
 async function initializeCloud(){
   if(!IS_CLOUD)return;
-  const module=await import("./cloud-runtime.js?v=20261008-cardinality");
+  const module=await import("./cloud-runtime.js?v=20261008-baizhi-live2d");
   state.cloud=await module.createCloudRuntime(window.RESONANCE_CLOUD_CONFIG);
   state.user=state.cloud.user;
   renderAuthState();

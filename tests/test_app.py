@@ -457,6 +457,12 @@ class ResonanceLabTests(unittest.TestCase):
             "sample/model.skel", "sample/model.atlas", "sample/texture.png",
         })
 
+    def test_cloud_live2d_rewrites_nanoka_requests_to_firebase_mirror(self):
+        app = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('if(IS_CLOUD) return `${location.origin}/live2d-assets/', app)
+        self.assertNotIn('if(IS_CLOUD) return value;', app)
+        self.assertIn("\ninstallLive2dLocalCacheProxy();", app)
+
     def test_usage_question_applies_temporary_count_and_full_roster_context(self):
         roster = server.get_roster()
         original = roster["chisa"]["max_uses"]
@@ -1418,6 +1424,40 @@ class ResonanceLabTests(unittest.TestCase):
                 for team in configuration["teams"]
             ]
             self.assertTrue(any({"carlotta", "zhezhi"} <= team for team in teams))
+
+    def test_second_baizhi_expands_ready_two_person_core_to_eleventh_team(self):
+        roster = {
+            cid: {
+                "owned": True,
+                "level": 90,
+                "build_status": "완성",
+                "max_uses": 1,
+                "signature_weapon": True,
+            }
+            for cid in (
+                "aemeath", "denia", "chisa", "hiyuki", "lucilla", "suisui",
+                "hsin", "rover-electro", "jiyan", "mortefi", "youhu",
+                "cartethyia", "ciaccona", "rover-aero", "galbrena", "iuno",
+                "shorekeeper", "phrolova", "qiuyuan", "cantarella", "jinhsi",
+                "yinlin", "verina", "camellya", "sanhua", "baizhi", "carlotta",
+                "zhezhi", "xiangli-yao", "lynae",
+            )
+        }
+        for cid in ("chisa", "suisui", "shorekeeper", "baizhi"):
+            roster[cid]["max_uses"] = 2
+        roster["xiangli-yao"]["build_status"] = "육성 중"
+        roster["xiangli-yao"]["signature_weapon"] = False
+        roster["baizhi"]["build_status"] = "실전 가능"
+        roster["baizhi"]["signature_weapon"] = False
+
+        result = server.recommend({"roster": roster, "team_count": "all"})
+        self.assertEqual(result["maximum_team_count"], 11)
+        for configuration in result["configurations"]:
+            self.assertEqual(configuration["team_count"], 11)
+            self.assertTrue(any(
+                team.get("verified_core_fallback") and team["score"] < 79
+                for team in configuration["teams"]
+            ))
 
     def test_unbuilt_core_does_not_take_premium_support_from_ready_core(self):
         chars = {c["id"]: c for c in server.load_characters()}

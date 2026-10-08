@@ -1,4 +1,4 @@
-import {recommendInBrowser} from "./cloud-planner.js?v=20261008-cardinality";
+import {recommendInBrowser} from "./cloud-planner.js?v=20261008-baizhi-live2d";
 
 self.onmessage=event=>{
   const {id,payload}=event.data||{};

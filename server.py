@@ -308,6 +308,7 @@ BUILD_READINESS = {"미육성": 0.0, "육성 중": 0.45, "실전 가능": 0.78, 
 MIN_INFERRED_TEAM_SCORE = 60.0
 MIN_COMPLETE_ALL_TEAM_SCORE = 80.0
 MIN_COMPLETE_ALL_COMBAT_SCORE = 79.0
+MIN_CORE_FALLBACK_ALL_COMBAT_SCORE = 72.0
 MIN_COMPLETE_ALL_CORE_READINESS = 0.45
 SCORE_WEIGHTS = {"composition": 43, "meta": 19, "investment": 20, "build": 18}
 SEQUENCE_QUALITY = {0: 0.78, 1: 0.83, 2: 0.87, 3: 0.91, 4: 0.94, 5: 0.97, 6: 1.0}
@@ -1061,6 +1062,20 @@ def optimize_complete_allocations(
             seen.add(key)
             unique_states.append((variant, sum(team["allocation_score"] for team in variant)))
 
+    # A high-scoring beam state can already have an entirely unused verified
+    # core. Always try to append such teams before comparing cardinality.
+    # This directly handles a second low-value sustain enabling an 11th team.
+    extended_states: list[tuple[list[dict[str, Any]], float]] = []
+    extended_seen: set[tuple[str, ...]] = set()
+    for selected, _ in unique_states:
+        extended = extend_allocation(candidates, selected, team_limit)
+        key = tuple(sorted(team["key"] for team in extended))
+        if key in extended_seen:
+            continue
+        extended_seen.add(key)
+        extended_states.append((extended, sum(team["allocation_score"] for team in extended)))
+    unique_states = extended_states
+
     # Roster-wide mode is cardinality-first. If any recovery path reaches more
     # complete teams than the score-pruned beam, every displayed configuration
     # must use that larger count instead of continuing to show ten-team plans.
@@ -1313,6 +1328,10 @@ def recommend(payload: dict[str, Any]) -> dict[str, Any]:
             and (
                 float(candidate.get("score") or 0) >= MIN_COMPLETE_ALL_COMBAT_SCORE
                 or int(candidate.get("readiness") or 0) >= 100
+                or (
+                    candidate.get("verified_core_fallback")
+                    and float(candidate.get("score") or 0) >= MIN_CORE_FALLBACK_ALL_COMBAT_SCORE
+                )
             )
             and float(candidate.get("weakest_core_readiness") or 0) >= MIN_COMPLETE_ALL_CORE_READINESS
             and not candidate.get("premium_core_mismatch")
